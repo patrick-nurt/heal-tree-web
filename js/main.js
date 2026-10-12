@@ -261,42 +261,123 @@ function mulberry(seed) {
   return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
-// ─── Beams ───────────────────────────────────────────────────────────────────
+// ─── Beams (always visible: limb-clamped, Flutter PlanetProjection parity) ──
 const beams = [];
 const pulseTex = glowTexture('rgba(255,240,200,1)', 'rgba(212,175,55,.6)');
-function fireBeam(fromLatLon, toLatLon, { receive = false } = {}) {
-  const p0 = latLonToVec3(fromLatLon[0], fromLatLon[1], 1.01);
-  const p1 = latLonToVec3(toLatLon[0], toLatLon[1], 1.01);
-  const angle = p0.angleTo(p1);
-  const mid = p0.clone().add(p1).normalize().multiplyScalar(1 + 0.18 + angle * 0.10);
-  const curve = new THREE.QuadraticBezierCurve3(p0, mid, p1);
-  const group = new THREE.Group();
-  const color = receive ? GOLD_LIGHT : GOLD;
-  const tube = new THREE.Mesh(
-    new THREE.TubeGeometry(curve, 40, 0.012, 6, false),
-    new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
-  );
-  const head = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: pulseTex, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-  }));
-  group.add(tube, head);
-  world.add(group);
-  beams.push({ curve, group, tube, head, start: performance.now(), durationMs: 2500, receive });
+const BEAM_SEGS = 44;
+
+// Flat ribbon in the camera plane, rebuilt each frame from the projected
+// curve — the Flutter app did the same per-frame projection, so beams stay
+// visible even when their anchor rotates to the far side (clamped to the
+// limb at 97% radius).
+function beamStrip(color, width) {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+  const idx = [];
+  for (let i = 0; i < BEAM_SEGS; i++) {
+    const a = i * 2, b = i * 2 + 1;
+    idx.push(a, b, a + 2, b, b + 2, a + 2);
+  }
+  g.setIndex(idx);
+  const m = new THREE.MeshBasicMaterial({
+    color, transparent: true, blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 5;
+  return mesh;
 }
 
-function updateBeams(now) {
+function fireBeam(from, to, { receive = false } = {}) {
+  const color = receive ? GOLD_LIGHT : GOLD;
+  const core = beamStrip(color, 0.014);
+  const glow = beamStrip(color, 0.05);
+  const head = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: pulseTex, color, transparent: true, blending: THREE.AdditiveBlending,
+    depthWrite: false, depthTest: false,
+  }));
+  head.renderOrder = 6;
+  const group = new THREE.Group();
+  group.add(glow, core, head);
+  scene.add(group);
+  beams.push({ from, to, group, core, glow, head, start: performance.now(), durationMs: 2500, receive });
+}
+
+// Orthographic projection with limb clamp (port of PlanetProjection):
+// far-side points slide onto the limb silhouette instead of disappearing.
+function projectGeo(lat, lon, centerLon, r = 1.005) {
+  const lam = (lon - centerLon) * Math.PI / 180;
+  const phi = lat * Math.PI / 180;
+  const x = Math.cos(phi) * Math.sin(lam);
+  const y = Math.sin(phi);
+  const z = Math.cos(phi) * Math.cos(lam);
+  let px = x, py = y;
+  if (z <= 0.10) {
+    const m = Math.hypot(x, y);
+    if (m < 1e-6) { px = 0; py = 0.97; } else { px = x / m * 0.97; py = y / m * 0.97; }
+  }
+  return { x: px * r, y: py * r };
+}
+
+// True 3D unit vector (for the arc lift, valid even on the far side).
+function geoUnit(lat, lon) {
+  const lam = lon * Math.PI / 180, phi = lat * Math.PI / 180;
+  return new THREE.Vector3(Math.cos(phi) * Math.sin(lam), Math.sin(phi), Math.cos(phi) * Math.cos(lam));
+}
+
+function setStrip(attr, i6, x, y, nx, ny, w) {
+  attr.array[i6 + 0] = x + nx * w; attr.array[i6 + 1] = y + ny * w; attr.array[i6 + 2] = 0.05;
+  attr.array[i6 + 3] = x - nx * w; attr.array[i6 + 4] = y - ny * w; attr.array[i6 + 5] = 0.05;
+}
+
+function updateBeams(now, centerLon) {
   for (let i = beams.length - 1; i >= 0; i--) {
     const b = beams[i];
     const p = Math.min((now - b.start) / b.durationMs, 1);
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
-    b.tube.material.opacity = (0.35 + p * 0.30) * env;
-    b.head.position.copy(b.curve.getPoint(p));
-    const s = (0.13 + 0.06 * Math.sin(p * Math.PI)) * env;
-    b.head.scale.setScalar(Math.max(s, 0.0001));
+    const a = projectGeo(b.from[0], b.from[1], centerLon);
+    const c = projectGeo(b.to[0], b.to[1], centerLon);
+    const lift = 1 + 0.18 + geoUnit(b.from[0], b.from[1]).angleTo(geoUnit(b.to[0], b.to[1])) * 0.10;
+    const mid = new THREE.Vector2((a.x + c.x) / 2, (a.y + c.y) / 2);
+    mid.set((a.x + c.x) / 2, (a.y + c.y) / 2);
+    if (mid.length() < 1e-4) mid.set(0, lift);
+    else mid.multiplyScalar(lift);
+
+    const pts = [];
+    for (let s = 0; s <= BEAM_SEGS; s++) {
+      const t = s / BEAM_SEGS, inv = 1 - t;
+      pts.push(new THREE.Vector2(
+        inv * inv * a.x + 2 * inv * t * mid.x + t * t * c.x,
+        inv * inv * a.y + 2 * inv * t * mid.y + t * t * c.y,
+      ));
+    }
+    const pos0 = b.core.geometry.attributes.position;
+    const pos1 = b.glow.geometry.attributes.position;
+    for (let s = 0; s <= BEAM_SEGS; s++) {
+      const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
+      const dx = next.x - prev.x, dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1e-4;
+      const nx = -dy / len, ny = dx / len;
+      setStrip(pos0, s * 6, pts[s].x, pts[s].y, nx, ny, 0.014);
+      setStrip(pos1, s * 6, pts[s].x, pts[s].y, nx, ny, 0.05);
+    }
+    pos0.needsUpdate = true;
+    pos1.needsUpdate = true;
+
+    b.head.position.set(pts[Math.round(p * BEAM_SEGS)].x, pts[Math.round(p * BEAM_SEGS)].y, 0.06);
+    const hs = (0.13 + 0.06 * Math.sin(p * Math.PI)) * env;
+    b.head.scale.setScalar(Math.max(hs, 0.0001));
     b.head.material.opacity = env;
+    b.core.material.opacity = (0.55 + p * 0.25) * env;
+    b.glow.material.opacity = 0.32 * env;
+
     if (p >= 1) {
-      world.remove(b.group);
-      b.tube.geometry.dispose(); b.tube.material.dispose(); b.head.material.dispose();
+      scene.remove(b.group);
+      b.core.geometry.dispose(); b.core.material.dispose();
+      b.glow.geometry.dispose(); b.glow.material.dispose();
+      b.head.material.dispose();
       beams.splice(i, 1);
     }
   }
@@ -376,7 +457,7 @@ privacySheet.querySelector('.back').addEventListener('click', () => privacySheet
 
 // ─── Frame loop ──────────────────────────────────────────────────────────────
 let last = performance.now();
-const ROT_SPEED = (Math.PI * 2) / 90; // 90 s / revolution (parity)
+const ROT_SPEED = (Math.PI * 2) / 45; // 45 s / revolution — livelier
 let breath = 0;
 
 function resize() {
@@ -425,7 +506,8 @@ function frame(now) {
   }
   pos.needsUpdate = true;
 
-  updateBeams(now);
+  const centerLon = -(world.rotation.y * 180 / Math.PI + 90);
+  updateBeams(now, centerLon);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -452,5 +534,6 @@ function frame(now) {
   pollCounter();
   setInterval(pollCounter, 3000);
   requestAnimationFrame(frame);
+  const l = document.getElementById('loading'); if (l) { l.classList.add('done'); setTimeout(() => l.remove(), 600); }
   window.__dbg = { camera, renderer, scene, world, planet, latLonToVec3, anchorOf };
 })();

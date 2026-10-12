@@ -6,6 +6,8 @@
 <meta name="theme-color" content="#0a0a0a">
 <title>The Heal In Tree</title>
 <link rel="icon" href="assets/favicon.png" type="image/png">
+<link rel="preload" as="image" href="assets/earth_night.jpg">
+<link rel="preload" as="image" href="assets/earth_dark.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&display=swap" rel="stylesheet">
@@ -90,6 +92,16 @@
   }
   .sheet .foot { margin-top: 28px; color: var(--text-dim); font-size: 13px; letter-spacing: .08em; }
 
+  #loading {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); z-index: 5; transition: opacity .5s ease;
+  }
+  #loading.done { opacity: 0; pointer-events: none; }
+  #loading .pulse {
+    width: 14px; height: 14px; border-radius: 50%; background: var(--gold);
+    box-shadow: 0 0 18px rgba(212,175,55,.8); animation: pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { transform: scale(.6); opacity: .5; } 50% { transform: scale(1.2); opacity: 1; } }
   #fallback {
     position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
     text-align: center; padding: 30px; color: var(--text-dim); font-size: 18px; line-height: 1.6;
@@ -98,6 +110,7 @@
 </head>
 <body>
 <div id="fallback"></div>
+<div id="loading"><div class="pulse"></div></div>
 <canvas id="scene"></canvas>
 
 <div id="hud">
@@ -141,6 +154,6 @@
 </div>
 
 <script type="importmap">{ "imports": { "three": "./js/three.module.min.js" } }</script>
-<script type="module" src="./js/main.js?v=5"></script>
+<script type="module" src="./js/main.js?v=6"></script>
 </body>
 </html>
