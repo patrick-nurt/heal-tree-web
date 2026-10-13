@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 // Planet Design Lab — four globe directions in one WebGL canvas (scissor viewports).
 // 1 GOLDEN EARTH (current) · 2 ECLIPSE · 3 AMBER · 4 CONSTELLATION
 
