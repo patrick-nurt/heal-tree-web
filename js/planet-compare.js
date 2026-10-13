@@ -351,7 +351,5 @@ const cells = [];
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
   window.__cmp = { cells };
 })();
