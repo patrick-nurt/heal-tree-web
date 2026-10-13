@@ -276,7 +276,7 @@ const cells = [];
 
   function resize() {
     renderer.setSize(innerWidth, innerHeight, false);
-    camera.aspect = (innerWidth / 2) / (innerHeight / 2);
+    camera.aspect = (innerWidth / 4) / (innerHeight / 2); // cell aspect (4 cols × 2 rows)
     camera.updateProjectionMatrix();
   }
   addEventListener('resize', resize);
