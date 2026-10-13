@@ -569,7 +569,11 @@ let DEMO_STYLE = null;
 async function onAct() {
   vibrate([400, 400, 200, 400, 400]); // ≈2s firm triple-pulse — brief parity (§4)
   const continent = continentOf(userCountry);
-  fireBeam(anchorOf(userCountry), FORESTS[continent]);
+  // Brief §2: destination anonymous and RANDOM — a random stranger's country,
+  // not a fixed forest point. Backend routing (continent forest) unchanged.
+  const keys = Object.keys(COUNTRY_ANCHORS).filter(k => k !== userCountry.toUpperCase() && k !== "XX");
+  const dest = keys[Math.floor(Math.random() * keys.length)];
+  fireBeam(anchorOf(userCountry), COUNTRY_ANCHORS[dest]);
   count += 1; $count.textContent = count; // optimistic; poll corrects
   try { await api('/rpc/create_signal', { p_sender_country: userCountry, p_continent: continent }); }
   catch { /* offline: visual only */ }
@@ -581,7 +585,12 @@ async function onReceive() {
   catch { /* offline */ }
   if (signal) {
     vibrate([30, 60, 30, 50, 30, 40, 40, 60, 30]);
-    fireBeam(FORESTS[signal.continent] ?? FORESTS[continentOf(userCountry)], anchorOf(userCountry), { receive: true });
+    // Brief §2: the receiver watches the light travel FROM the sender's
+    // country (e.g., "Dubai → Ibiza"); forest origin only if unknown.
+    const origin = signal.senderCountry && signal.senderCountry !== "XX"
+      ? anchorOf(signal.senderCountry)
+      : (FORESTS[signal.continent] ?? FORESTS[continentOf(userCountry)]);
+    fireBeam(origin, anchorOf(userCountry), { receive: true });
   } else {
     vibrate(20);
     showToast(L.noSignalsAvailable);
