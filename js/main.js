@@ -554,7 +554,7 @@ async function pollCounter() {
 let DEMO_STYLE = null;
 
 async function onAct() {
-  vibrate([60, 60, 40, 60, 60]);
+  vibrate([400, 400, 200, 400, 400]); // ≈2s firm triple-pulse — brief parity (§4)
   const continent = continentOf(userCountry);
   fireBeam(anchorOf(userCountry), FORESTS[continent]);
   count += 1; $count.textContent = count; // optimistic; poll corrects
