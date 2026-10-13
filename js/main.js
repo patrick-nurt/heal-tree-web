@@ -419,8 +419,8 @@ function updateBeams(now) {
     // zero amplitude at both endpoints so the rings stay exact.
     const wob = (s) => {
       const k = Math.sin(Math.PI * s / BEAM_SEGS);
-      const ph = s * 0.85 - now * 0.012;
-      return k * 0.009 * (Math.sin(ph) + 0.5 * Math.sin(ph * 2.37 + 1.3));
+      const ph = s * 0.24 - now * 0.010;
+      return k * 0.009 * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
     };
 
     for (const [si, strip] of b.strips.entries()) {
@@ -432,9 +432,12 @@ function updateBeams(now) {
         const nx = -dy / len, ny = dx / len;
         const t = s / BEAM_SEGS;
         const off = wob(s);
-        const w = strip.geometry.userData.w ? strip.geometry.userData.w : 0;
-        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny,
-          typeof w === "function" ? w(t) : w);
+        // Rounded caps: full width through the middle, tapering to a point
+        // over the first/last 12% so the beam never meets the rings squared.
+        const cap = Math.pow(Math.sin(Math.PI * t), 0.7);
+        const w0 = strip.geometry.userData.w ? strip.geometry.userData.w : 0;
+        const w = (typeof w0 === "function" ? w0(t) : w0) * cap;
+        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny, w);
       }
       pos.needsUpdate = true;
       strip.material.opacity = env;
