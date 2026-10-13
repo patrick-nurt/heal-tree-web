@@ -336,7 +336,7 @@ function fireBeam(from, to, { receive = false } = {}) {
   const color = receive ? GOLD_LIGHT : GOLD;
   const group = new THREE.Group();
   // Layered soft glow: wide faint → mid → bright hairline core. No hard edges.
-  const widths = [() => 0.036, () => 0.018, () => 0.007];
+  const widths = [() => 0.016, () => 0.009, () => 0.004];
   const strips = [
     beamStrip(color, widths[0], () => 0.14),
     beamStrip(color, widths[1], () => 0.40),
@@ -420,7 +420,7 @@ function updateBeams(now) {
     const wob = (s) => {
       const k = Math.sin(Math.PI * s / BEAM_SEGS);
       const ph = s * 0.85 - now * 0.012;
-      return k * 0.02 * (Math.sin(ph) + 0.5 * Math.sin(ph * 2.37 + 1.3));
+      return k * 0.009 * (Math.sin(ph) + 0.5 * Math.sin(ph * 2.37 + 1.3));
     };
 
     for (const [si, strip] of b.strips.entries()) {
