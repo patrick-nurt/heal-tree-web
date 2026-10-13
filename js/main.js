@@ -595,11 +595,13 @@ function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  // Planet radius = 78% of the smaller screen dimension — clear margin so
-  // the disc (and its breathing glow) never touch the edges.
+  // Planet radius as a fraction of the smaller dimension: portrait 78%
+  // (fits the HUD); landscape 60% — desktop windows are height-limited and
+  // the globe otherwise dwarfs the counter and buttons.
+  const frac = w <= h ? 0.78 : 0.60;
   const halfPx = Math.min(w, h) / 2;
   camera.fov = THREE.MathUtils.radToDeg(
-    2 * Math.atan((h / 2) / (camera.position.z * 0.78 * halfPx)),
+    2 * Math.atan((h / 2) / (camera.position.z * frac * halfPx)),
   );
   camera.fov = Math.min(camera.fov, 60);
   camera.updateProjectionMatrix();
