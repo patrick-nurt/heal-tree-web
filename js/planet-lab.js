@@ -264,8 +264,10 @@ const cells = [];
     const world = new THREE.Group();
     world.add(planet);
     scene.add(world);
-    v.dress(scene);
-    cells.push({ scene, world, planet, starsRef: scene.getObjectByName('anchors'), animate: v.animate });
+    const cell = { scene, world, planet, starsRef: null, animate: v.animate };
+    v.dress(scene, cell);
+    cell.starsRef = scene.getObjectByName('anchors');
+    cells.push(cell);
     world.rotation.y = THREE.MathUtils.degToRad(20 - 90);
   }
 
