@@ -1,9 +1,14 @@
-// Planet Compare — A: spinning globe (current) · B: globe held centered on the
-// user's location while the golden thread arcs animate around it.
+// Planet Compare — four motion directions, beams firing live in each.
+// A SPINNING (current): globe rotates.
+// B HOLD STEADY: globe locked on user; threads precess.
+// C SPIN + ARCS: globe rotates; threads sweep the opposite way (dual motion).
+// D STILL + PULSE: static globe; threads breathe/pulse; all focus on beams.
 import * as THREE from './three.module.min.js';
 
 const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhtYndwZWxmbHR6b2J2cWRwYWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE4MTQ0MjQsImV4cCI6MjEwNzM5MDQyNH0.gvZyfnbvO1YnrLveeFIRJLxe5JcI_s2MQ-zAyKrVPoI';
 const GOLD = 0xd4af37, GOLD_LIGHT = 0xf0e6c8;
+const REST = 'https://xmbwpelfltzobvqdpake.supabase.co/rest/v1';
+const HEADERS = { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json' };
 
 function glowTexture(inner, outer) {
   const c = document.createElement('canvas'); c.width = c.height = 256;
@@ -35,6 +40,7 @@ function mulberry(seed) {
   let a = seed;
   return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
+const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 const canvas = document.getElementById('cmp');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -67,9 +73,8 @@ function planetMaterial() {
         float la = pow(L, 1.5) * 1.6;
         col += vec3(0.945, 0.565, 0.142) * la;
         if (L > 0.55) col += vec3(1.0, 0.94, 0.745) * (L - 0.55) * 2.4;
-        float z = 0.9; // approximated orthographic brightness
-        col += vec3(0.188, 0.141, 0.078) * pow(1.0 - z, 2.2);
-        col *= 0.62 + 0.42 * z;
+        col += vec3(0.188, 0.141, 0.078) * pow(0.95, 2.2);
+        col *= 1.0;
         gl_FragColor = vec4(min(col, vec3(1.0)), 1.0);
       }`,
   });
@@ -83,7 +88,7 @@ function glowSprite(tex, scale, opacity, order) {
   return sp;
 }
 function stars() {
-  const n = 70, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+  const n = 60, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
   const rnd = mulberry(7);
   for (let i = 0; i < n; i++) {
     pos[i * 3] = (rnd() - 0.5) * 12; pos[i * 3 + 1] = (rnd() - 0.5) * 16; pos[i * 3 + 2] = -2 - rnd() * 5;
@@ -94,17 +99,13 @@ function stars() {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return new THREE.Points(g, new THREE.PointsMaterial({
-    size: 0.05, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false,
-    map: SOFT,
+    size: 0.05, vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, map: SOFT,
   }));
 }
-
-// Thread arcs: two tilted tori + two light nodes traveling each arc.
 function threads() {
   const g = new THREE.Group();
   const nodes = [];
-  const TILTS = [[0.5, 0.35], [-0.35, -0.55]];
-  for (const [rx, rz] of TILTS) {
+  for (const [rx, rz] of [[0.5, 0.35], [-0.35, -0.55]]) {
     const torus = new THREE.Mesh(
       new THREE.TorusGeometry(1.12, 0.006, 8, 128),
       new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }),
@@ -124,34 +125,151 @@ function threads() {
   return { group: g, nodes };
 }
 
-const cells = [];
+// ─── Beams (simplified for the lab — same visual language) ───────────────────
+const BEAM_SEGS = 36, BEAM_MS = 1800;
+function makeBeamSys(scene) {
+  const beams = [];
+  const bursts = [];
+  function beamStrip(color, w0, b0, order) {
+    const g = new THREE.BufferGeometry();
+    const pos = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
+    const col = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const idx = [];
+    for (let i = 0; i < BEAM_SEGS; i++) {
+      const a = i * 2, b = i * 2 + 1;
+      idx.push(a, b, a + 2, b, b + 2, a + 2);
+    }
+    g.setIndex(idx);
+    const m = new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, blending: THREE.AdditiveBlending,
+      depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(g, m);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = order;
+    mesh.userData = { w0, b0 };
+    return mesh;
+  }
+  function fireBeam(from, to, colorNow, rotYAtFire) {
+    const color = colorNow ?? GOLD;
+    const group = new THREE.Group();
+    const mid = beamStrip(color, 0.018, 0.40, 5);
+    const core = beamStrip(color, 0.004, 1.0, 5);
+    const head = (() => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: SOFT, color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }));
+      sp.renderOrder = 6; return sp;
+    })();
+    group.add(mid, core, head);
+    scene.add(group);
+    beams.push({ from, to, group, mid, core, head, start: performance.now(), rotYAtFire: rotYAtFire ?? 0 });
+  }
+  function projectGeo(lat, lon, centerLon, r = 1.005) {
+    const lam = (lon - centerLon) * Math.PI / 180;
+    const phi = lat * Math.PI / 180;
+    return { x: Math.cos(phi) * Math.sin(lam) * r, y: Math.sin(phi) * r };
+  }
+  function geoUnit(lat, lon) {
+    const lam = lon * Math.PI / 180, phi = lat * Math.PI / 180;
+    return new THREE.Vector3(Math.cos(phi) * Math.sin(lam), Math.sin(phi), Math.cos(phi) * Math.cos(lam));
+  }
+  function setStrip(attr, i6, x, y, nx, ny, w) {
+    attr.array[i6 + 0] = x + nx * w; attr.array[i6 + 1] = y + ny * w; attr.array[i6 + 2] = 0.05;
+    attr.array[i6 + 3] = x - nx * w; attr.array[i6 + 4] = y - ny * w; attr.array[i6 + 5] = 0.05;
+  }
+  function update(now, centerLon) {
+    for (let i = beams.length - 1; i >= 0; i--) {
+      const b = beams[i];
+      const p = Math.min((now - b.start) / BEAM_MS, 1);
+      const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
+      const u0 = geoUnit(b.from[0], b.from[1]);
+      const u1 = geoUnit(b.to[0], b.to[1]);
+      const a = projectGeo(b.from[0], b.from[1], centerLon);
+      const c = projectGeo(b.to[0], b.to[1], centerLon);
+      const lift = 1 + 0.16 + u0.angleTo(u1) * 0.09;
+      const mid = new THREE.Vector2((a.x + c.x) / 2, (a.y + c.y) / 2);
+      if (mid.length() < 1e-4) mid.set(0, lift); else mid.multiplyScalar(lift);
+      const omega = u0.angleTo(u1), so = Math.sin(omega);
+      const tmp = new THREE.Vector3();
+      const pts = [], br = [];
+      for (let s = 0; s <= BEAM_SEGS; s++) {
+        const t = s / BEAM_SEGS, inv = 1 - t;
+        pts.push(new THREE.Vector2(
+          inv * inv * a.x + 2 * inv * t * mid.x + t * t * c.x,
+          inv * inv * a.y + 2 * inv * t * mid.y + t * t * c.y,
+        ));
+        let v;
+        if (so < 1e-4) v = tmp.copy(u0).lerp(u1, t);
+        else v = tmp.copy(u0).multiplyScalar(Math.sin((1 - t) * omega) / so).addScaledVector(u1, Math.sin(t * omega) / so);
+        v.applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotYAtFire + (b.follow ? (now - b.start) * 0 : 0) + (b.spinOffset || 0));
+        void v;
+        v = new THREE.Vector3(Math.cos(v.y || v.x), 0.5, Math.sin(v.x));
+        // visibility via rotated z of the linearly-interpolated great-circle point
+        const vv = geoUnit(
+          b.from[0] + (b.to[0] - b.from[0]) * t,
+          b.from[1] + (b.to[1] - b.from[1]) * t,
+        ).applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotYNow);
+        const z = vv.z;
+        const k = Math.max(0, Math.min(1, (z + 0.15) / 0.45));
+        br.push(k);
+      }
+      const base = new THREE.Color(GOLD);
+      for (const strip of [b.mid, b.core]) {
+        const pos = strip.geometry.attributes.position;
+        const col = strip.geometry.attributes.color;
+        for (let s = 0; s <= BEAM_SEGS; s++) {
+          const t = s / BEAM_SEGS;
+          const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
+          const dx = next.x - prev.x, dy = next.y - prev.y;
+          const len = Math.hypot(dx, dy) || 1e-4;
+          const nx = -dy / len, ny = dx / len;
+          const cap = Math.pow(Math.sin(Math.PI * t), 0.7);
+          const vis = sstep(0.3, 0.55, br[s]);
+          setStrip(pos, s * 6, pts[s].x, pts[s].y, nx, ny, strip.userData.w0 * cap * vis);
+          for (const o of [s * 6, s * 6 + 3]) {
+            col.array[o] = base.r * strip.userData.b0; col.array[o + 1] = base.g * strip.userData.b0; col.array[o + 2] = base.b * strip.userData.b0;
+          }
+        }
+        pos.needsUpdate = true;
+        col.needsUpdate = true;
+        strip.material.opacity = env;
+      }
+      const hi = Math.round(p * BEAM_SEGS);
+      b.head.position.set(pts[hi].x, pts[hi].y, 0.06);
+      b.head.material.opacity = env * (0.08 + 0.92 * br[hi]);
+      if (p >= 1) {
+        scene.remove(b.group);
+        for (const st of [b.mid, b.core]) { st.geometry.dispose(); st.material.dispose(); }
+        b.head.material.dispose();
+        beams.splice(i, 1);
+      }
+    }
+  }
+  return { fireBeam, update, beams };
+}
 
+const ANCH = { US:[38,-97], CA:[56,-106], MX:[23,-102], GB:[54,-2], ES:[40,-3], FR:[46,2], DE:[51,10],
+  IT:[42,12], PT:[39,-8], AE:[24,54], SA:[24,45], JP:[36,138], CN:[35,105], IN:[21,78], AU:[-25,133],
+  BR:[-10,-55], AR:[-34,-64], ZA:[-29,24], NG:[9,8], EG:[27,30], KE:[0,38], TR:[39,35], RU:[61,100], ID:[-2,118] };
+
+const cells = [];
 (async () => {
   const [texNight, texDark] = await Promise.all([texNP, texDP]);
   for (const t of [texNight, texDark]) { t.colorSpace = THREE.NoColorSpace; t.anisotropy = 4; }
 
-  let userLon = 0;
-  try {
-    const res = await fetch('https://xmbwpelfltzobvqdpake.supabase.co/functions/v1/geoip', {
-      headers: { apikey: ANON, Authorization: `Bearer ${ANON}` }, signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) { const j = await res.json(); const c = j.country || 'AE'; }
-    // keep it simple: the lab just centers on the geoip country via a tiny map
-  } catch { /* default */ }
-
-  // minimal country→lon for centering (same anchors as the app)
-  const ANCH = { US:-97, CA:-106, MX:-102, GB:-2, ES:-3, FR:2, DE:10, IT:12, PT:-8, AE:54, SA:45, JP:138,
-    CN:105, IN:78, AU:133, BR:-55, AR:-64, ZA:24, NG:8, EG:30, KE:38, TR:35, RU:100, ID:118 };
   let country = 'XX';
   try {
     const res = await fetch('https://xmbwpelfltzobvqdpake.supabase.co/functions/v1/geoip', {
-      headers: { apikey: ANON, Authorization: `Bearer ${ANON}` }, signal: AbortSignal.timeout(5000),
+      headers: HEADERS, signal: AbortSignal.timeout(5000),
     });
     if (res.ok) country = (await res.json()).country || 'XX';
   } catch { /* default */ }
-  userLon = ANCH[country] ?? 0;
+  const userLat = country === 'XX' ? 20 : (ANCH[country] ? ANCH[country] - ANCH[country] + 20 : 20);
+  const userLon = ANCH[country] ?? 0;
+  void userLat;
 
-  for (const kind of ['A', 'B']) {
+  for (const kind of ['A', 'B', 'C', 'D']) {
     const scene = new THREE.Scene();
     scene.add(stars());
     const mat = planetMaterial();
@@ -165,15 +283,16 @@ const cells = [];
     scene.add(glowSprite(SOFT, 2.35, 0.35, 3));
     const th = threads();
     scene.add(th.group);
-    cells.push({ kind, scene, world, th, userLon });
+    const beamSys = makeBeamSys(scene);
     world.rotation.y = THREE.MathUtils.degToRad(-userLon - 90);
+    cells.push({ kind, scene, world, th, beamSys, baseRotY: world.rotation.y });
   }
 
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 50);
   camera.position.set(0, 0, 6.2);
   function resize() {
     renderer.setSize(innerWidth, innerHeight, false);
-    camera.aspect = (innerWidth / 2) / (innerHeight);
+    camera.aspect = (innerWidth / 2) / (innerHeight / 2);
     camera.updateProjectionMatrix();
   }
   addEventListener('resize', resize);
@@ -189,23 +308,37 @@ const cells = [];
     if (!running) return;
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const w = innerWidth, hw = Math.floor(w / 2), hh = innerHeight;
+    const w = innerWidth, h = innerHeight, hw = Math.floor(w / 2), hh = Math.floor(h / 2);
     renderer.setScissorTest(true);
     cells.forEach((cell, i) => {
-      if (cell.kind === 'A') {
-        cell.world.rotation.y += dt * ((Math.PI * 2) / 45); // spinning (current)
-        cell.th.group.rotation.y += dt * 0.35;
-        for (const n of cell.th.nodes) { n.theta += n.speed * dt; n.holder.rotation.z = n.theta; }
-      } else {
-        // B: globe LOCKED centered on the user — the arcs do the moving.
-        cell.th.group.rotation.y += dt * 0.55;
-        for (const n of cell.th.nodes) { n.theta += n.speed * dt * 1.6; n.holder.rotation.z = n.theta; }
-        // gentle precess on the far thread for life
-        cell.th.group.rotation.x = 0.16 * Math.sin(now * 0.00021);
+      // Motion per variant
+      if (cell.kind === 'A') cell.world.rotation.y += dt * (Math.PI * 2) / 45;
+      if (cell.kind === 'B') { /* locked */ }
+      if (cell.kind === 'C') cell.world.rotation.y += dt * (Math.PI * 2) / 60;
+      if (cell.kind === 'D') { /* still */ }
+      cell.th.group.rotation.y += dt * (cell.kind === 'B' ? 0.55 : cell.kind === 'D' ? 0.25 : 0.35);
+      for (const n of cell.th.nodes) {
+        n.theta += n.speed * dt * (cell.kind === 'B' || cell.kind === 'D' ? 1.6 : 1);
+        n.holder.rotation.z = n.theta;
       }
-      const x = i * hw;
-      renderer.setViewport(x, 0, hw, hh);
-      renderer.setScissor(x, 0, hw, hh);
+      if (cell.kind === 'B') cell.th.group.rotation.x = 0.16 * Math.sin(now * 0.00021);
+      if (cell.kind === 'D') cell.th.group.rotation.x = 0.10 * Math.sin(now * 0.0004);
+
+      const centerLon = -(cell.world.rotation.y * 180 / Math.PI + 90);
+      cell.beamSys.update(now, centerLon);
+
+      // auto-fire a beam every ~4s in each panel
+      if (now - (cell.lastFire || 0) > 4000 && i >= 0) {
+        cell.lastFire = now;
+        const keys = Object.keys(ANCH);
+        const a = keys[Math.floor(Math.random() * keys.length)];
+        const b = keys[Math.floor(Math.random() * keys.length)];
+        cell.beamSys.fireBeam(ANCH[a], ANCH[b], GOLD, cell.world.rotation.y);
+      }
+
+      const x = (i % 2) * hw, y = i < 2 ? hh : 0;
+      renderer.setViewport(x, y, hw, hh);
+      renderer.setScissor(x, y, hw, hh);
       renderer.render(cell.scene, camera);
     });
     renderer.setScissorTest(false);

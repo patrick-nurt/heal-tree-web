@@ -11,11 +11,14 @@
   html, body { height:100%; overflow:hidden; background:var(--bg); }
   body { font-family:'Cormorant Garamond',serif; }
   canvas { display:block; position:fixed; inset:0; width:100%; height:100%; }
-  .tag { position:fixed; top:calc(30px + env(safe-area-inset-top)); z-index:3; text-align:center;
-         color:var(--gold); pointer-events:none; width:50%; font-size:17px; letter-spacing:.22em; }
+  .tag { position:fixed; z-index:3; text-align:center;
+         color:var(--gold); pointer-events:none; font-size:14px; letter-spacing:.16em; }
+  .tag small { color:var(--dim); font-size:11px; letter-spacing:.06em; font-style:italic; display:block; margin-top:3px; }
   .tag small { display:block; color:var(--dim); font-size:12px; letter-spacing:.1em; font-style:italic; margin-top:4px; }
-  #tagA { left:0; }
-  #tagB { right:0; }
+  #tagA { top:calc(22px + env(safe-area-inset-top)); left:0; width:50%; font-size:16px; }
+  #tagB { top:calc(22px + env(safe-area-inset-top)); right:0; width:50%; font-size:16px; }
+  #tagC { top:calc(52% + 64px); left:0; width:50%; font-size:16px; }
+  #tagD { top:calc(52% + 64px); right:0; width:50%; font-size:16px; }
   .foot { position:fixed; bottom:calc(18px + env(safe-area-inset-bottom)); left:0; right:0; z-index:3;
           text-align:center; color:var(--dim); font-size:14px; letter-spacing:.08em; pointer-events:none; }
 </style>
@@ -24,8 +27,8 @@
 <canvas id="cmp"></canvas>
 <div class="tag" id="tagA">A · SPINNING<small>globe rotates (current live build)</small></div>
 <div class="tag" id="tagB">B · HOLD STEADY<small>globe locked on you — the arcs move</small></div>
-<div class="foot">watch ~10 seconds each · B keeps your country centered the whole time</div>
+<div class="foot">beams fire automatically in every panel · pick the motion that feels right</div>
 <script type="importmap">{ "imports": { "three": "./js/three.module.min.js" } }</script>
-<script type="module" src="./js/planet-compare.js?v=1"></script>
+<script type="module" src="./js/planet-compare.js?v=2"></script>
 </body>
 </html>
