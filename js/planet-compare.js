@@ -268,9 +268,9 @@ const cells = [];
     });
     if (res.ok) country = (await res.json()).country || 'XX';
   } catch { /* default */ }
-  const userLat = country === 'XX' ? 20 : (ANCH[country] ? ANCH[country] - ANCH[country] + 20 : 20);
-  const userLon = ANCH[country] ?? 0;
-  void userLat;
+  const pair = ANCH[country] ?? null;
+  const userLat = pair ? pair[0] : 20;
+  const userLon = pair ? pair[1] : 0;
 
   for (const kind of ['A', 'B', 'C', 'D']) {
     const scene = new THREE.Scene();
