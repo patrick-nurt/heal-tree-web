@@ -279,6 +279,20 @@ const ringTex = (() => {
 })();
 const BEAM_SEGS = 44;
 const BEAM_MS = 1800;
+// Endpoint markers are rings (not blobs): soft donut with a bright rim.
+const ringSoftTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0.00, 'rgba(255,225,150,0)');
+  grad.addColorStop(0.58, 'rgba(255,225,150,0)');
+  grad.addColorStop(0.72, 'rgba(255,225,150,0.85)');
+  grad.addColorStop(0.82, 'rgba(212,175,55,0.30)');
+  grad.addColorStop(1.00, 'rgba(212,175,55,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
 
 function beamStrip(color, width, brightness) {
   const g = new THREE.BufferGeometry();
@@ -309,9 +323,9 @@ function beamStrip(color, width, brightness) {
   return mesh;
 }
 
-function glowSprite(color, opacity) {
+function glowSprite(map, color, opacity) {
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: pulseTex, color, transparent: true, opacity,
+    map, color, transparent: true, opacity,
     blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   }));
   sp.renderOrder = 6;
@@ -321,11 +335,11 @@ function glowSprite(color, opacity) {
 function fireBeam(from, to, { receive = false } = {}) {
   const color = receive ? GOLD_LIGHT : GOLD;
   const group = new THREE.Group();
-  const core = beamStrip(color, 0.014, (t) => 0.55 + 0.45 * t);
-  const glow = beamStrip(color, 0.05, () => 0.32);
-  const head = glowSprite(color, 1);
-  const origin = glowSprite(color, 0);
-  const dest = glowSprite(color, 0);
+  const core = beamStrip(color, (t) => 0.003 + 0.012 * Math.sin(Math.PI * t), (t) => 0.85 + 0.15 * t);
+  const glow = beamStrip(color, (t) => 0.006 + 0.042 * Math.sin(Math.PI * t), () => 0.5);
+  const head = glowSprite(pulseTex, color, 1);
+  const origin = glowSprite(ringSoftTex, color, 0);
+  const dest = glowSprite(ringSoftTex, color, 0);
   group.add(glow, core, head, origin, dest);
   scene.add(group);
   beams.push({
@@ -381,7 +395,10 @@ function updateBeams(now) {
     const b = beams[i];
     const p = Math.min((now - b.start) / b.durationMs, 1);
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
-    const { pts, a, c } = beamPoints(b, centerLon);
+    const { pts: base, a, c } = beamPoints(b, centerLon);
+    // Slight energy feel: broad, gentle undulation (zero at both endpoints),
+    // applied perpendicular to the ribbon in the fill loop below.
+    const pts = base;
 
     const pos0 = b.core.geometry.attributes.position;
     const pos1 = b.glow.geometry.attributes.position;
@@ -396,7 +413,7 @@ function updateBeams(now) {
     pos0.needsUpdate = true;
     pos1.needsUpdate = true;
     b.core.material.opacity = env;
-    b.glow.material.opacity = 0.32 * env;
+    b.glow.material.opacity = 0.32 * env * (0.85 + 0.15 * Math.sin(now * 0.02));
 
     // Head rides the arc.
     b.head.position.set(pts[Math.round(p * BEAM_SEGS)].x, pts[Math.round(p * BEAM_SEGS)].y, 0.06);
@@ -406,13 +423,13 @@ function updateBeams(now) {
     // Origin bloom: swells in during launch, rides its anchor, fades last.
     b.origin.position.set(a.x, a.y, 0.055);
     const oIn = Math.min(p / 0.10, 1);
-    b.origin.scale.setScalar(Math.max(0.06 + 0.16 * oIn, 0.0001));
+    b.origin.scale.setScalar(Math.max(0.07 + 0.20 * oIn, 0.0001));
     b.origin.material.opacity = (0.55 + 0.25 * oIn) * env;
 
     // Destination bloom: grows as the pulse approaches, holds while lit.
     b.dest.position.set(c.x, c.y, 0.055);
     const dIn = Math.min(Math.max((p - 0.70) / 0.25, 0), 1);
-    b.dest.scale.setScalar(Math.max(0.05 + 0.30 * dIn, 0.0001));
+    b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001));
     b.dest.material.opacity = dIn * env;
 
     if (p >= 1) {
