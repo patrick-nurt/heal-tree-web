@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Heal In Tree — Button Design Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --gold:#d4af37; --gold-light:#f0e6c8; --bg:#0a0a0a; --text:#e8e8e8; }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { background:var(--bg); color:var(--text); font-family:'Cormorant Garamond',serif; min-height:100vh; }
+  h1 { font-weight:300; font-size:22px; letter-spacing:.2em; color:var(--gold); text-align:center; padding:36px 20px 6px; }
+  .sub { color:#666; font-size:14px; text-align:center; letter-spacing:.15em; padding-bottom:26px; }
+  .lab { display:flex; flex-wrap:wrap; gap:64px 72px; align-items:flex-start; justify-content:center; padding:20px 30px 70px; }
+  .cell { display:flex; flex-direction:column; align-items:center; gap:18px; }
+  .caption { color:#d4af37; font-size:14px; letter-spacing:.25em; }
+  .vibe { color:#666; font-size:12px; letter-spacing:.08em; font-style:italic; }
+
+  button.act {
+    background:none; border:none; cursor:pointer; color:var(--gold);
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+    font-family:inherit; padding:6px;
+  }
+  button.act .ring {
+    position:relative; width:96px; height:96px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    transition:transform .15s ease, box-shadow .35s ease;
+  }
+  button.act svg { width:30px; height:30px; filter:drop-shadow(0 0 6px rgba(212,175,55,.6)); }
+  button.act .label { font-size:20px; letter-spacing:.26em; margin-left:.26em; color:var(--gold); }
+  button.act:active .ring { transform:scale(1.08); }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* ── 1 · Crown (current) ── */
+  .v1 .ring {
+    border:1px solid rgba(212,175,55,.8);
+    background:radial-gradient(circle at 50% 42%, rgba(212,175,55,.16) 0%, rgba(212,175,55,.05) 55%, rgba(212,175,55,0) 72%);
+    box-shadow:0 0 24px rgba(212,175,55,.22), inset 0 0 16px rgba(212,175,55,.10);
+  }
+  .v1 .ring::before {
+    content:""; position:absolute; inset:-5px; border-radius:50%;
+    background:conic-gradient(from 0deg, rgba(212,175,55,0) 0deg, rgba(212,175,55,.9) 42deg, rgba(212,175,55,0) 84deg, rgba(212,175,55,0) 360deg);
+    -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 1.5px));
+            mask:radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 1.5px));
+    animation:spin 6s linear infinite; opacity:.85;
+  }
+  .v1 .ring::after {
+    content:""; position:absolute; inset:-2px; border-radius:50%;
+    box-shadow:0 0 18px rgba(212,175,55,.30);
+    animation:halo 3.2s ease-in-out infinite;
+  }
+  @keyframes halo { 0%,100% { opacity:.45; } 50% { opacity:1; } }
+  .v1:active .ring { box-shadow:0 0 46px rgba(212,175,55,.65), inset 0 0 26px rgba(212,175,55,.28); }
+
+  /* ── 2 · Halo Pulse ── */
+  .v2 .ring {
+    border:none;
+    background:radial-gradient(circle, rgba(212,175,55,.28) 0%, rgba(212,175,55,.07) 58%, transparent 72%);
+  }
+  .v2 .inner { position:absolute; inset:0; border-radius:50%; border:1px solid rgba(212,175,55,.5); }
+  .v2 .ripple {
+    position:absolute; inset:0; border-radius:50%;
+    border:1px solid rgba(212,175,55,.55);
+    animation:rip 2.8s ease-out infinite;
+  }
+  .v2 .ripple.r2 { animation-delay:1.4s; }
+  @keyframes rip { 0% { transform:scale(1); opacity:.75; } 100% { transform:scale(1.7); opacity:0; } }
+  .v2 svg { filter:drop-shadow(0 0 10px rgba(212,175,55,.8)); }
+  .v2:active .ring { transform:scale(1.06); }
+
+  /* ── 3 · Sun Disc ── */
+  .v3 .ring {
+    border:none;
+    background:radial-gradient(circle at 50% 38%, #ffe9a8 0%, #d4af37 55%, #7a6023 100%);
+    box-shadow:0 0 28px rgba(212,175,55,.4), inset 0 -4px 10px rgba(40,28,8,.55);
+  }
+  .v3 svg { filter:drop-shadow(0 1px 2px rgba(40,28,8,.6)); }
+  .v3 svg path { fill:#241a08; }
+  .v3 .ring::before {
+    content:""; position:absolute; inset:-8px; border-radius:50%;
+    border:1px dashed rgba(212,175,55,.45);
+    animation:spin 24s linear infinite;
+  }
+  .v3:active .ring { box-shadow:0 0 52px rgba(212,175,55,.75); }
+
+  /* ── 4 · Filament ── */
+  .v4 .ring {
+    border:2px dotted rgba(212,175,55,.95);
+    box-shadow:0 0 20px rgba(212,175,55,.28), inset 0 0 14px rgba(212,175,55,.12);
+  }
+  .v4 .orbit { position:absolute; inset:0; animation:spin 5s linear infinite; }
+  .v4 .orbit.rev { animation-direction:reverse; }
+  .v4 .orbit::before, .v4 .orbit::after {
+    content:""; position:absolute; top:-3px; left:calc(50% - 2.5px);
+    width:5px; height:5px; border-radius:50%; background:var(--gold-light);
+    box-shadow:0 0 7px rgba(240,230,200,.9);
+  }
+  .v4 .orbit::after { top:auto; bottom:-3px; }
+  .v4:active .ring { box-shadow:0 0 44px rgba(212,175,55,.6), inset 0 0 20px rgba(212,175,55,.3); }
+
+  .note { color:#666; font-size:13px; text-align:center; padding-bottom:40px; letter-spacing:.05em; }
+</style>
+</head>
+<body>
+<h1>THE HEAL IN TREE</h1>
+<div class="sub">BUTTON DESIGN LAB — TAP THEM, WATCH THEM, PICK ONE</div>
+
+<div class="lab">
+  <div class="cell">
+    <button class="act v1">
+      <span class="ring">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5h5L9.5 22 19 10h-5.5L13 2z"/></svg>
+      </span>
+      <span class="label">ACT</span>
+    </button>
+    <div class="caption">1 · CROWN</div>
+    <div class="vibe">rotating spark arc + breathing halo</div>
+  </div>
+
+  <div class="cell">
+    <button class="act v2">
+      <span class="ring">
+        <span class="inner"></span>
+        <span class="ripple"></span>
+        <span class="ripple r2"></span>
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5h5L9.5 22 19 10h-5.5L13 2z"/></svg>
+      </span>
+      <span class="label">ACT</span>
+    </button>
+    <div class="caption">2 · HALO PULSE</div>
+    <div class="vibe">soft glow, ripples breathe outward</div>
+  </div>
+
+  <div class="cell">
+    <button class="act v3">
+      <span class="ring">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5h5L9.5 22 19 10h-5.5L13 2z"/></svg>
+      </span>
+      <span class="label">ACT</span>
+    </button>
+    <div class="caption">3 · SUN DISC</div>
+    <div class="vibe">filled golden disc, knocked-out icon</div>
+  </div>
+
+  <div class="cell">
+    <button class="act v4">
+      <span class="ring">
+        <span class="orbit"></span>
+        <span class="orbit rev"></span>
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5h5L9.5 22 19 10h-5.5L13 2z"/></svg>
+      </span>
+      <span class="label">ACT</span>
+    </button>
+    <div class="caption">4 · FILAMENT</div>
+    <div class="vibe">beaded energy ring, orbiting sparks</div>
+  </div>
+</div>
+
+<div class="note">Same for RECEIVE (heart icon). Press and hold to feel the activation.</div>
+</body>
+</html>
