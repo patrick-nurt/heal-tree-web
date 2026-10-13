@@ -57,12 +57,18 @@ function planetMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: { uNight: { value: null }, uDark: { value: null } },
     vertexShader: `
-      varying vec2 vUv;
-      void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+      void main() {
+        vUv = uv;
+        vN = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vV = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`,
     fragmentShader: `
       precision highp float;
       uniform sampler2D uNight, uDark;
-      varying vec2 vUv;
+      varying vec2 vUv; varying vec3 vN; varying vec3 vV;
       void main() {
         vec3 night = texture2D(uNight, vUv).rgb;
         vec3 dark  = texture2D(uDark,  vUv).rgb;
@@ -73,8 +79,10 @@ function planetMaterial() {
         float la = pow(L, 1.5) * 1.6;
         col += vec3(0.945, 0.565, 0.142) * la;
         if (L > 0.55) col += vec3(1.0, 0.94, 0.745) * (L - 0.55) * 2.4;
-        col += vec3(0.188, 0.141, 0.078) * pow(0.95, 2.2);
-        col *= 1.0;
+        float z = clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0);
+        col += vec3(0.188, 0.141, 0.078) * pow(1.0 - z, 2.2);
+        col *= 0.62 + 0.42 * z;
+        col += vec3(1.0, 0.745, 0.372) * pow(1.0 - z, 4.5) * 1.15;
         gl_FragColor = vec4(min(col, vec3(1.0)), 1.0);
       }`,
   });
@@ -105,7 +113,7 @@ function stars() {
 function threads() {
   const g = new THREE.Group();
   const nodes = [];
-  for (const [rx, rz] of [[0.5, 0.35], [-0.35, -0.55]]) {
+  for (const [rx, rz] of [[0.42, 0.30], [-0.30, -0.48]]) {
     const torus = new THREE.Mesh(
       new THREE.TorusGeometry(1.12, 0.006, 8, 128),
       new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }),
@@ -127,7 +135,7 @@ function threads() {
 
 // ─── Beams (simplified for the lab — same visual language) ───────────────────
 const BEAM_SEGS = 36, BEAM_MS = 1800;
-function makeBeamSys(scene) {
+function makeBeamSys(scene, worldRef) {
   const beams = [];
   const bursts = [];
   function beamStrip(color, w0, b0, order) {
@@ -152,7 +160,7 @@ function makeBeamSys(scene) {
     mesh.userData = { w0, b0 };
     return mesh;
   }
-  function fireBeam(from, to, colorNow, rotYAtFire) {
+  function fireBeam(from, to, colorNow) {
     const color = colorNow ?? GOLD;
     const group = new THREE.Group();
     const mid = beamStrip(color, 0.018, 0.40, 5);
@@ -163,7 +171,7 @@ function makeBeamSys(scene) {
     })();
     group.add(mid, core, head);
     scene.add(group);
-    beams.push({ from, to, group, mid, core, head, start: performance.now(), rotYAtFire: rotYAtFire ?? 0 });
+    beams.push({ from, to, group, mid, core, head, start: performance.now(), rotRef: worldRef });
   }
   function projectGeo(lat, lon, centerLon, r = 1.005) {
     const lam = (lon - centerLon) * Math.PI / 180;
@@ -199,18 +207,13 @@ function makeBeamSys(scene) {
           inv * inv * a.x + 2 * inv * t * mid.x + t * t * c.x,
           inv * inv * a.y + 2 * inv * t * mid.y + t * t * c.y,
         ));
+        // exact great-circle slerp, rotated by the panel's CURRENT globe rotation
         let v;
         if (so < 1e-4) v = tmp.copy(u0).lerp(u1, t);
-        else v = tmp.copy(u0).multiplyScalar(Math.sin((1 - t) * omega) / so).addScaledVector(u1, Math.sin(t * omega) / so);
-        v.applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotYAtFire + (b.follow ? (now - b.start) * 0 : 0) + (b.spinOffset || 0));
-        void v;
-        v = new THREE.Vector3(Math.cos(v.y || v.x), 0.5, Math.sin(v.x));
-        // visibility via rotated z of the linearly-interpolated great-circle point
-        const vv = geoUnit(
-          b.from[0] + (b.to[0] - b.from[0]) * t,
-          b.from[1] + (b.to[1] - b.from[1]) * t,
-        ).applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotYNow);
-        const z = vv.z;
+        else v = tmp.copy(u0).multiplyScalar(Math.sin((1 - t) * omega) / so)
+          .addScaledVector(u1, Math.sin(t * omega) / so);
+        v.applyAxisAngle(new THREE.Vector3(0, 1, 0), b.rotRef.rotation.y);
+        const z = v.z;
         const k = Math.max(0, Math.min(1, (z + 0.15) / 0.45));
         br.push(k);
       }
@@ -283,7 +286,7 @@ const cells = [];
     scene.add(glowSprite(SOFT, 2.35, 0.35, 3));
     const th = threads();
     scene.add(th.group);
-    const beamSys = makeBeamSys(scene);
+    const beamSys = makeBeamSys(scene, world);
     world.rotation.y = THREE.MathUtils.degToRad(-userLon - 90);
     cells.push({ kind, scene, world, th, beamSys, baseRotY: world.rotation.y });
   }
@@ -311,29 +314,32 @@ const cells = [];
     const w = innerWidth, h = innerHeight, hw = Math.floor(w / 2), hh = Math.floor(h / 2);
     renderer.setScissorTest(true);
     cells.forEach((cell, i) => {
-      // Motion per variant
+      // Motion per variant (thread group: yaw drift only; tilt FIXED at build)
       if (cell.kind === 'A') cell.world.rotation.y += dt * (Math.PI * 2) / 45;
-      if (cell.kind === 'B') { /* locked */ }
       if (cell.kind === 'C') cell.world.rotation.y += dt * (Math.PI * 2) / 60;
-      if (cell.kind === 'D') { /* still */ }
-      cell.th.group.rotation.y += dt * (cell.kind === 'B' ? 0.55 : cell.kind === 'D' ? 0.25 : 0.35);
+      if (cell.kind === 'B') cell.th.group.rotation.y += dt * 0.30;
+      if (cell.kind === 'D') cell.th.group.rotation.y += dt * 0.12;
+      if (cell.kind === 'A') cell.th.group.rotation.y += dt * 0.20;
+      if (cell.kind === 'C') cell.th.group.rotation.y += dt * -0.45;
+      if (cell.kind === 'B' || cell.kind === 'D') {
+        cell.th.group.rotation.x = 0.06 * Math.sin(now * 0.00021); // faint sway only
+      }
       for (const n of cell.th.nodes) {
-        n.theta += n.speed * dt * (cell.kind === 'B' || cell.kind === 'D' ? 1.6 : 1);
+        n.theta += n.speed * dt * (cell.kind === 'B' || cell.kind === 'D' ? 1.3 : 1);
         n.holder.rotation.z = n.theta;
       }
-      if (cell.kind === 'B') cell.th.group.rotation.x = 0.16 * Math.sin(now * 0.00021);
-      if (cell.kind === 'D') cell.th.group.rotation.x = 0.10 * Math.sin(now * 0.0004);
 
       const centerLon = -(cell.world.rotation.y * 180 / Math.PI + 90);
       cell.beamSys.update(now, centerLon);
 
-      // auto-fire a beam every ~4s in each panel
-      if (now - (cell.lastFire || 0) > 4000 && i >= 0) {
+      // auto-fire: beam every ~4s per panel, riding that panel's rotation
+      if (now - (cell.lastFire || 0) > 4000) {
         cell.lastFire = now;
         const keys = Object.keys(ANCH);
         const a = keys[Math.floor(Math.random() * keys.length)];
-        const b = keys[Math.floor(Math.random() * keys.length)];
-        cell.beamSys.fireBeam(ANCH[a], ANCH[b], GOLD, cell.world.rotation.y);
+        let b = keys[Math.floor(Math.random() * keys.length)];
+        if (b === a) b = keys[(keys.indexOf(a) + 3) % keys.length];
+        cell.beamSys.fireBeam(ANCH[a], ANCH[b], GOLD, cell.world.rotation.y, cell.world);
       }
 
       const x = (i % 2) * hw, y = i < 2 ? hh : 0;
@@ -343,6 +349,8 @@ const cells = [];
     });
     renderer.setScissorTest(false);
     requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
   window.__cmp = { cells };
