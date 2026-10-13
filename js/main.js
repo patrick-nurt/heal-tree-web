@@ -440,8 +440,8 @@ function beamGeo(b, centerLon) {
       .addScaledVector(u1, Math.sin(t * omega) / so);
     v.applyAxisAngle(new THREE.Vector3(0, 1, 0), world.rotation.y);
     const z = v.z; // −1 … +1: hemisphere depth
-    const k = Math.max(0, Math.min(1, (z + 0.15) / 0.45)); // 0 far … 1 near
-    br.push(k * k * (3 - 2 * k)); // pure visibility, near→1, far→0
+    const k = Math.max(0, Math.min(1, (z + 0.55) / 0.72)); // wide visible band
+    br.push(k * k * (3 - 2 * k));
   }
   return { pts, br, a, c };
 }
