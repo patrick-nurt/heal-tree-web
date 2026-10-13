@@ -148,6 +148,7 @@ const VARIANTS = [
   { name: '4 · CONSTELLATION', vibe: 'dark sphere, graticule + anchor stars',
     u: { land: 0.4, lights: 1.25, base: 0.45, rim: 1.2, amb: 0.85 },
     dress: (scene) => {
+      scene.add(glowSprite(RING, 2.6, 0.4));  // placeholder anchor for splice
       scene.add(glowSprite(RING, 2.6, 0.4));
       const pts = [];
       for (const [lat, lon] of Object.values(ANCHORS)) { const v = ll(lat, lon, 1.008); pts.push(v.x, v.y, v.z); }
@@ -178,7 +179,74 @@ const VARIANTS = [
       }));
       scene.add(grid);
     } },
+  { name: '5 · CONNECTED HANDS', vibe: 'brief: two golden lines cradle the globe',
+    u: { land: 0.9, lights: 1.1, base: 0.6, rim: 1.5, amb: 0.82 },
+    dress: (scene) => {
+      scene.add(glowSprite(RING, 2.8, 0.7));
+      // Brief "Connected Hands": elegant golden lines loop up from the
+      // bottom corners, cradling the circle. Camera-space — the hands hold
+      // the world while it turns.
+      for (const s of [-1, 1]) {
+        const curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(1.18 * s, -1.88, 0.5),
+          new THREE.Vector3(0.86 * s, -1.42, 0.3),
+          new THREE.Vector3(0.55 * s, -1.16, 0.12),
+          new THREE.Vector3(0.30 * s, -1.05, 0.05),
+        ]);
+        const tube = new THREE.Mesh(
+          new THREE.TubeGeometry(curve, 40, 0.030, 8, false),
+          new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.85,
+            blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }),
+        );
+        tube.renderOrder = 4;
+        scene.add(tube);
+        const palm = glowSprite(SOFT, 0.9, 0.5);
+        palm.position.set(0.5 * s, -1.1, 0.1);
+        scene.add(palm);
+      }
+    } },
+  { name: '6 · EARTH AT NIGHT', vibe: 'photographic — city lights on black',
+    u: { land: 0.25, lights: 1.9, base: 0.5, rim: 1.0, amb: 0.75 },
+    dress: (scene) => { scene.add(glowSprite(RING, 2.6, 0.5)); } },
+  { name: '7 · GOLDEN SPROUT', vibe: 'brief: seed of light, two leaf arcs',
+    u: { land: 0.8, lights: 1.05, base: 0.55, rim: 1.3, amb: 0.8 },
+    dress: (scene) => {
+      scene.add(glowSprite(SOFT, 2.2, 0.3));
+      const seed = glowSprite(SOFT, 0.85, 0.55);
+      seed.position.set(0, 1.1, 0);
+      scene.add(seed);
+      for (const s of [-1, 1]) {
+        const curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0, 1.02, 0),
+          new THREE.Vector3(0.22 * s, 1.22, 0.08),
+          new THREE.Vector3(0.38 * s, 1.38, 0.12),
+        ]);
+        const leaf = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.016, 6, false),
+          new THREE.MeshBasicMaterial({ color: GOLD_LIGHT, transparent: true, opacity: 0.9,
+            blending: THREE.AdditiveBlending, depthWrite: false }));
+        scene.add(leaf);
+      }
+    } },
+  { name: '8 · THE GOLDEN THREAD', vibe: 'brief: one unbroken thread circles the earth',
+    u: { land: 0.7, lights: 1.15, base: 0.55, rim: 1.35, amb: 0.8 },
+    dress: (scene, cell) => {
+      scene.add(glowSprite(RING, 2.7, 0.55));
+      const threadGroup = new THREE.Group();
+      for (const [rx, rz] of [[0.5, 0.35], [-0.35, -0.55]]) {
+        const t = new THREE.Mesh(
+          new THREE.TorusGeometry(1.12, 0.006, 8, 128),
+          new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.75,
+            blending: THREE.AdditiveBlending, depthWrite: false }),
+        );
+        t.rotation.x = rx; t.rotation.z = rz;
+        threadGroup.add(t);
+      }
+      scene.add(threadGroup);
+      cell.thread = threadGroup;
+    },
+    animate: (cell, dt) => { if (cell.thread) cell.thread.rotation.y += dt * 0.35; } },
 ];
+
 
 const cells = [];
 
@@ -197,7 +265,7 @@ const cells = [];
     world.add(planet);
     scene.add(world);
     v.dress(scene);
-    cells.push({ scene, world, planet, starsRef: scene.getObjectByName('anchors') });
+    cells.push({ scene, world, planet, starsRef: scene.getObjectByName('anchors'), animate: v.animate });
     world.rotation.y = THREE.MathUtils.degToRad(20 - 90);
   }
 
@@ -225,11 +293,12 @@ const cells = [];
     if (!running) return;
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const w = innerWidth, h = innerHeight, hw = Math.floor(w / 2), hh = Math.floor(h / 2);
+    const w = innerWidth, h = innerHeight, hw = Math.floor(w / 4), hh = Math.floor(h / 2);
     renderer.setScissorTest(true);
     cells.forEach((cell, i) => {
       cell.world.rotation.y += ROT * dt;
-      const x = (i % 2) * hw, y = i < 2 ? hh : 0; // three viewport origin = bottom-left
+      if (cell.animate) cell.animate(cell, dt);
+      const x = (i % 4) * hw, y = i < 4 ? hh : 0; // three viewport origin = bottom-left
       renderer.setViewport(x, y, hw, hh);
       renderer.setScissor(x, y, hw, hh);
       renderer.render(cell.scene, camera);
