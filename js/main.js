@@ -188,7 +188,7 @@ const atmo = new THREE.Sprite(new THREE.SpriteMaterial({
   blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
 }));
 atmo.scale.setScalar(2.9);
-atmo.renderOrder = -1;
+atmo.renderOrder = 3;
 world.add(atmo);
 
 // Inner haze — parity with GlowPainter g1: additive glow over the disc,
@@ -209,7 +209,7 @@ const haze = new THREE.Sprite(new THREE.SpriteMaterial({
   blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
 }));
 haze.scale.setScalar(2.35);
-haze.renderOrder = -1; // transparent pass: after planet, before beams
+haze.renderOrder = 3; // above ghost beams, below crisp beams
 world.add(haze);
 
 // The Golden Thread — the brief's unbroken filament circling the earth;
@@ -281,10 +281,11 @@ function mulberry(seed) {
 function depth(i) { return DEPTH_MIN + DEPTH_SPAN * ((i / BEAM_SEGS) - 0.5) * 0; }
 const DEPTH_MIN = 0.001, DEPTH_SPAN = 0;
 // ─── Beams ───────────────────────────────────────────────────────────────────
-// Geo-anchored, following the rotation. The geodesic is sampled in camera
-// plane; each strip layer carries real depth: mid+core depth-test against the
-// planet (occluded on the far side), the wide faint halo layer does not —
-// the far-side ghost = kindness hinting through the earth.
+// All beam geometry lives in the near-camera plane (z ≈ 0.05) so the screen
+// shape never distorts. "Behind the earth" is a render-order sandwich:
+//   planet (opaque) → ghost halo layer (dim + widened, under atmosphere)
+//   → atmosphere sprites → crisp mid/core layers (fade out passing behind)
+//   → head, endpoint rings, sparks
 const beams = [];
 const bursts = [];
 const pulseTex = glowTexture('rgba(255,240,200,1)', 'rgba(212,175,55,.6)');
@@ -312,11 +313,10 @@ const ringSoftTex = (() => {
 })();
 const BEAM_SEGS = 44;
 const BEAM_MS = 1800;
-const GHOST = 0.10;   // brightness of the through-globe ghost
-const Z_NEAR = 1.12;  // beam origin: just in front of the planet's near surface
-const Z_FAR = -1.12;  // beam terminus: behind the far surface → occluded
+const GHOST = 0.12; // brightness of far-side portions (hinting through)
+const Z_BEAM = 0.05;
 
-function beamStrip(color, width, brightness, depthTest) {
+function beamStrip(color, w0, b0, order) {
   const g = new THREE.BufferGeometry();
   const pos = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
   const col = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
@@ -330,34 +330,33 @@ function beamStrip(color, width, brightness, depthTest) {
   g.setIndex(idx);
   const m = new THREE.MeshBasicMaterial({
     vertexColors: true, transparent: true, blending: THREE.AdditiveBlending,
-    depthWrite: false, depthTest: !!depthTest, side: THREE.DoubleSide,
+    depthWrite: false, depthTest: false, side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(g, m);
   mesh.frustumCulled = false;
-  mesh.renderOrder = 5;
-  mesh.userData.w = width;
-  mesh.userData.bright = brightness;
+  mesh.renderOrder = order;
+  mesh.userData = { w0, b0 };
   return mesh;
 }
 
-function glowSprite(map, color, opacity) {
+function glowSprite(map, color, opacity, order) {
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({
     map, color, transparent: true, opacity,
     blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   }));
-  sp.renderOrder = 6;
+  sp.renderOrder = order;
   return sp;
 }
 
 function fireBeam(from, to, { receive = false } = {}) {
   const color = receive ? GOLD_LIGHT : GOLD;
   const group = new THREE.Group();
-  const halo = beamStrip(color, () => 0.036, () => 0.14, false); // ghost layer
-  const mid = beamStrip(color, () => 0.018, () => 0.40, true);
-  const core = beamStrip(color, () => 0.004, () => 1.0, true);
-  const head = glowSprite(pulseTex, color, 1);
-  const origin = glowSprite(ringSoftTex, color, 0);
-  const dest = glowSprite(ringSoftTex, color, 0);
+  const halo = beamStrip(color, 0.036, 0.14, 2.5);   // ghost layer (under haze)
+  const mid = beamStrip(color, 0.018, 0.40, 5);      // crisp (crisp layers paint above haze @3)
+  const core = beamStrip(color, 0.004, 1.0, 5);
+  const head = glowSprite(pulseTex, color, 1, 6);
+  const origin = glowSprite(ringSoftTex, color, 0, 6);
+  const dest = glowSprite(ringSoftTex, color, 0, 6);
   const N = 9;
   const spos = new Float32Array(N * 3);
   const sg = new THREE.BufferGeometry();
@@ -369,6 +368,7 @@ function fireBeam(from, to, { receive = false } = {}) {
   sparks.frustumCulled = false;
   sparks.renderOrder = 6;
   group.add(halo, mid, core, head, origin, dest, sparks);
+  group.renderOrder = 5;
   scene.add(group);
   beams.push({
     from, to, group, halo, mid, core, head, origin, dest, sparks,
@@ -377,8 +377,8 @@ function fireBeam(from, to, { receive = false } = {}) {
   });
 }
 
-// Camera-plane positions (orthographic): far-side points keep their true
-// in-disc x,y — the depth below does the occlusion work.
+// Camera-plane positions (orthographic; beam stays coplanar to avoid any
+// perspective distortion). Far-side points keep their true in-disc x,y.
 function projectGeo(lat, lon, centerLon, r = 1.005) {
   const lam = (lon - centerLon) * Math.PI / 180;
   const phi = lat * Math.PI / 180;
@@ -392,6 +392,7 @@ function setStrip(attr, i6, x, y, nx, ny, w, z) {
   attr.array[i6 + 0] = x + nx * w; attr.array[i6 + 1] = y + ny * w; attr.array[i6 + 2] = z;
   attr.array[i6 + 3] = x - nx * w; attr.array[i6 + 4] = y - ny * w; attr.array[i6 + 5] = z;
 }
+const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 function beamGeo(b, centerLon) {
   const u0 = geoUnit(b.from[0], b.from[1]);
@@ -418,7 +419,7 @@ function beamGeo(b, centerLon) {
     v.applyAxisAngle(new THREE.Vector3(0, 1, 0), world.rotation.y);
     const z = v.z; // −1 … +1: hemisphere depth
     const k = Math.max(0, Math.min(1, (z + 0.15) / 0.45)); // 0 far … 1 near
-    br.push(GHOST + (1 - GHOST) * (k * k * (3 - 2 * k)));
+    br.push(k * k * (3 - 2 * k));
   }
   return { pts, br, a, c };
 }
@@ -432,69 +433,78 @@ function updateBeams(now) {
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
     const { pts, br, a, c } = beamGeo(b, centerLon);
     const base = new THREE.Color(b.color);
+    let brSum = 0;
 
-    for (const [si, strip] of [b.halo, b.mid, b.core].entries()) {
+    for (const strip of [b.halo, b.mid, b.core]) {
+      const { w0, b0 } = strip.userData;
+      const isGhost = strip === b.halo;
       const pos = strip.geometry.attributes.position;
       const col = strip.geometry.attributes.color;
       for (let s = 0; s <= BEAM_SEGS; s++) {
+        const t = s / BEAM_SEGS;
         const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
         const dx = next.x - prev.x, dy = next.y - prev.y;
         const len = Math.hypot(dx, dy) || 1e-4;
         const nx = -dy / len, ny = dx / len;
-        const t = s / BEAM_SEGS;
-        const cap = Math.pow(Math.sin(Math.PI * t), 0.7);          // rounded caps
+        const cap = Math.pow(Math.sin(Math.PI * t), 0.7);      // rounded caps
         const ph = s * 0.24 - now * 0.010;
-        const off = Math.sin(Math.PI * t) * 0.009                 // gentle energy wave
+        const off = Math.sin(Math.PI * t) * 0.009              // gentle energy wave
           * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
-        // depth per segment: near end in front, far end behind the planet
-        const z = 2.0 - (strip === b.halo ? 0 : Z_NEAR - (Z_NEAR - Z_FAR) * t);
-        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny,
-          strip.userData.w(t) * cap, z);
-        const lum = strip.userData.bright(t) * br[s];
+        const vis = sstep(0.30, 0.55, br[s]);                  // 0 behind … 1 near
+        let w, lum;
+        if (isGhost) {
+          w = w0 * cap * (1 + 0.8 * (1 - br[s]));              // widened behind = soft
+          lum = b0 * (GHOST + (1 - GHOST) * br[s]);
+        } else {
+          w = w0 * cap * vis;                                  // crisp fades out behind
+          lum = b0;
+        }
+        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny, w, Z_BEAM);
         for (const o of [s * 6, s * 6 + 3]) {
           col.array[o] = base.r * lum; col.array[o + 1] = base.g * lum; col.array[o + 2] = base.b * lum;
         }
+        brSum += br[s];
       }
       pos.needsUpdate = true;
       col.needsUpdate = true;
       strip.material.opacity = env;
     }
 
-    // Head rides the arc — halo over the globe when near, faint when far.
+    // Head rides the arc; behind the globe it dims to a whisper.
     const hi = Math.round(p * BEAM_SEGS);
-    b.head.position.set(pts[hi].x, pts[hi].y, 0.06);
-    b.head.scale.setScalar(Math.max(0.11 * env * (GHOST + 0.9 * br[hi]), 0.0001));
-    b.head.material.opacity = env * (GHOST + (1 - GHOST) * br[hi]);
+    b.head.position.set(pts[hi].x, pts[hi].y, Z_BEAM + 0.01);
+    b.head.scale.setScalar(Math.max((0.11 - 0.04 * (1 - br[hi])) * env * (0.3 + 0.7 * br[hi]), 0.0001));
+    b.head.material.opacity = env * (0.15 + 0.85 * br[hi]);
 
-    // Origin / destination rings ride their anchors, ghosted on the far side.
-    b.origin.position.set(a.x, a.y, 0.055);
+    // Origin / destination rings ride their anchors, ghosted behind.
+    b.origin.position.set(a.x, a.y, Z_BEAM + 0.005);
     const oIn = Math.min(p / 0.10, 1);
-    b.origin.scale.setScalar(Math.max(0.07 + 0.20 * oIn, 0.0001));
-    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (GHOST + (1 - GHOST) * br[0]);
-    b.dest.position.set(c.x, c.y, 0.055);
+    b.origin.scale.setScalar(Math.max(0.07 + 0.20 * oIn, 0.0001) * (0.55 + 0.45 * br[0]));
+    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (0.12 + 0.88 * br[0]);
+    b.dest.position.set(c.x, c.y, Z_BEAM + 0.005);
     const dIn = Math.min(Math.max((p - 0.70) / 0.25, 0), 1);
-    b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001));
-    b.dest.material.opacity = dIn * env * (GHOST + (1 - GHOST) * br[BEAM_SEGS]);
+    b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001) * (0.55 + 0.45 * br[BEAM_SEGS]));
+    b.dest.material.opacity = dIn * env * (0.12 + 0.88 * br[BEAM_SEGS]);
 
-    // Sparks flow through the beam, ghosting by their sample depth.
+    // Sparks flow through the beam; dim as a group by the mean depth.
     const sp = b.sparks.geometry.attributes.position;
     const flow = (now - b.start) / 650;
     for (let k = 0; k < b.offsets.length; k++) {
       const t = (b.offsets[k] + flow) % 1;
       const s = t * BEAM_SEGS, s0 = Math.floor(s), fr = s - s0;
       const p0 = pts[Math.min(s0, BEAM_SEGS)], p1 = pts[Math.min(s0 + 1, BEAM_SEGS)];
-      sp.setXYZ(k, p0.x + (p1.x - p0.x) * fr, p0.y + (p1.y - p0.y) * fr, 0.055);
+      sp.setXYZ(k, p0.x + (p1.x - p0.x) * fr, p0.y + (p1.y - p0.y) * fr, Z_BEAM + 0.005);
     }
     sp.needsUpdate = true;
-    b.sparks.material.opacity = 0.85 * env;
+    b.sparks.material.opacity = 0.85 * env * (0.25 + 0.75 * (brSum / (BEAM_SEGS + 1)));
 
     if (p >= 1) {
-      if (br[BEAM_SEGS] > 0.5) {
+      if (br[BEAM_SEGS] > 0.35) {
         const ring = new THREE.Sprite(new THREE.SpriteMaterial({
           map: ringTex, color: b.color, transparent: true,
           blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, opacity: 0.9,
         }));
-        ring.position.set(c.x, c.y, 0.06);
+        ring.position.set(c.x, c.y, Z_BEAM + 0.01);
         ring.renderOrder = 7;
         scene.add(ring);
         bursts.push({ ring, start: now });
