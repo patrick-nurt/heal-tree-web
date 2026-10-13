@@ -464,10 +464,11 @@ function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  // Planet radius ≈ 99% of the smaller screen dimension (app parity).
+  // Planet radius = 78% of the smaller screen dimension — clear margin so
+  // the disc (and its breathing glow) never touch the edges.
   const halfPx = Math.min(w, h) / 2;
   camera.fov = THREE.MathUtils.radToDeg(
-    2 * Math.atan((h / 2) / (camera.position.z * 0.99 * halfPx)),
+    2 * Math.atan((h / 2) / (camera.position.z * 0.78 * halfPx)),
   );
   camera.fov = Math.min(camera.fov, 60);
   camera.updateProjectionMatrix();
