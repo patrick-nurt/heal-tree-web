@@ -154,7 +154,7 @@ const sphereMat = new THREE.ShaderMaterial({
       float dl   = dot(dark, vec3(0.30, 0.55, 0.15));
       float land = clamp((dl - 0.075) / 0.10, 0.0, 1.0);
       float L    = max(night.r, max(night.g, night.b));
-      vec3 col = vec3(0.0157, 0.0275, 0.0627) + vec3(0.118, 0.098, 0.055) * land;
+      vec3 col = vec3(0.0157, 0.0275, 0.0627) + vec3(0.145, 0.120, 0.066) * land;
       float la = pow(L, 1.5) * 2.0;
       col += vec3(0.945, 0.565, 0.142) * la;
       if (L > 0.55) col += vec3(1.0, 0.94, 0.745) * (L - 0.55) * 2.4;
@@ -211,6 +211,20 @@ const haze = new THREE.Sprite(new THREE.SpriteMaterial({
 haze.scale.setScalar(2.35);
 haze.renderOrder = -1; // transparent pass: after planet, before beams
 world.add(haze);
+
+// The Golden Thread — the brief's unbroken filament circling the earth;
+// sweeps independently of the globe's spin.
+const threads = new THREE.Group();
+for (const [rx, rz] of [[0.5, 0.35], [-0.35, -0.55]]) {
+  const t = new THREE.Mesh(
+    new THREE.TorusGeometry(1.12, 0.006, 8, 128),
+    new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.6,
+      blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  t.rotation.set(rx, 0, rz);
+  threads.add(t);
+}
+scene.add(threads);
 
 function glowTexture(inner, outer) {
   const c = document.createElement('canvas'); c.width = c.height = 256;

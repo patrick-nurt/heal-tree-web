@@ -227,15 +227,15 @@ const VARIANTS = [
         scene.add(leaf);
       }
     } },
-  { name: '8 · THE GOLDEN THREAD', vibe: 'brief: one unbroken thread circles the earth',
-    u: { land: 0.7, lights: 1.15, base: 0.55, rim: 1.35, amb: 0.8 },
+  { name: '8 · THE GOLDEN THREAD', vibe: 'shipped — softened for country legibility',
+    u: { land: 0.9, lights: 1.0, base: 0.65, rim: 1.05, amb: 0.9 },
     dress: (scene, cell) => {
       scene.add(glowSprite(RING, 2.7, 0.55));
       const threadGroup = new THREE.Group();
       for (const [rx, rz] of [[0.5, 0.35], [-0.35, -0.55]]) {
         const t = new THREE.Mesh(
           new THREE.TorusGeometry(1.12, 0.006, 8, 128),
-          new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.75,
+          new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.6,
             blending: THREE.AdditiveBlending, depthWrite: false }),
         );
         t.rotation.x = rx; t.rotation.z = rz;
