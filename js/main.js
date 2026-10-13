@@ -433,7 +433,24 @@ function updateBeams(now) {
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
     const { pts, br, a, c } = beamGeo(b, centerLon);
     const base = new THREE.Color(b.color);
-    let brSum = 0;
+    let farSum = 0, farCount = 0, gx = 0, gy = 0;
+    for (let s = 0; s <= BEAM_SEGS; s++) {
+      if (br[s] < 0.35) {
+        farSum += (1 - br[s]);
+        farCount++;
+        gx += pts[s].x;
+        gy += pts[s].y;
+      }
+    }
+    const farSide = farCount > 3;
+    if (farSide) {
+      b.ghost.position.set(gx / farCount, gy / farCount, Z_BEAM - 0.01);
+      const gStr = Math.min((farSum / farCount) * 1.6, 1) * 0.10 * env;   // faint
+      b.ghost.material.opacity = gStr;
+    } else {
+      b.ghost.material.opacity = 0;
+    }
+    for (const strip of [b.mid, b.core]) {
 
     for (const strip of [b.halo, b.mid, b.core]) {
       const { w0, b0 } = strip.userData;
@@ -496,10 +513,11 @@ function updateBeams(now) {
       sp.setXYZ(k, p0.x + (p1.x - p0.x) * fr, p0.y + (p1.y - p0.y) * fr, Z_BEAM + 0.005);
     }
     sp.needsUpdate = true;
-    b.sparks.material.opacity = 0.85 * env * (0.08 + 0.92 * (brSum / (BEAM_SEGS + 1)));
+    const meanBr = br.reduce((sum, v) => sum + v, 0) / (BEAM_SEGS + 1);
+    b.sparks.material.opacity = 0.85 * env * (0.08 + 0.92 * meanBr);
 
     if (p >= 1) {
-      if (br[BEAM_SEGS] > 0.35) {
+      if (br[BEAM_SEGS] > 0.5) {
         const ring = new THREE.Sprite(new THREE.SpriteMaterial({
           map: ringTex, color: b.color, transparent: true,
           blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, opacity: 0.9,
@@ -510,7 +528,8 @@ function updateBeams(now) {
         bursts.push({ ring, start: now });
       }
       scene.remove(b.group);
-      for (const st of [b.halo, b.mid, b.core]) { st.geometry.dispose(); st.material.dispose(); }
+      for (const st of [b.mid, b.core]) { st.geometry.dispose(); st.material.dispose(); }
+      b.ghost.material.dispose();
       b.sparks.geometry.dispose(); b.sparks.material.dispose();
       for (const k of ["head", "origin", "dest"]) b[k].material.dispose();
       beams.splice(i, 1);
