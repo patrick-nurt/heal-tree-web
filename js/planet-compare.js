@@ -342,7 +342,7 @@ const cells = [];
         cell.beamSys.fireBeam(ANCH[a], ANCH[b], GOLD, cell.world.rotation.y, cell.world);
       }
 
-      const x = (i % 2) * hw, y = i < 2 ? hh : 0;
+      const x = (i % 2) * hw, y = i < 2 ? 0 : hh; // viewport origin bottom-left
       renderer.setViewport(x, y, hw, hh);
       renderer.setScissor(x, y, hw, hh);
       renderer.render(cell.scene, camera);
