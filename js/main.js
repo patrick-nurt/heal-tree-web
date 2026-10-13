@@ -680,7 +680,9 @@ function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
 
-  // Stationary globe; the signature thread + atmosphere carry the motion.
+  // Selina's FINAL pick — both layers move: globe drifts 60 s/rev, threads counter-sweep.
+  world.rotation.y += (Math.PI * 2) / 60 * dt;
+  threads.rotation.y -= dt * 0.33;
   atmoBreathe.phase += dt / 5.2;
   const br = 0.8 + 0.2 * Math.sin(atmoBreathe.phase * Math.PI * 2); // 0.6 … 1.0
   atmo.material.opacity = 0.8 * br;
