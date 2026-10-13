@@ -461,7 +461,6 @@ privacySheet.querySelector('.back').addEventListener('click', () => privacySheet
 // ─── Frame loop ──────────────────────────────────────────────────────────────
 let last = performance.now();
 const ROT_SPEED = (Math.PI * 2) / 45; // 45 s / revolution — livelier
-let breath = 0;
 
 function resize() {
   const w = innerWidth, h = innerHeight;
@@ -485,8 +484,6 @@ document.addEventListener('visibilitychange', () => {
   if (running) { last = performance.now(); requestAnimationFrame(frame); }
 });
 
-const ease = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-
 function frame(now) {
   if (!running) return;
   const dt = Math.min((now - last) / 1000, 0.1);
@@ -494,10 +491,6 @@ function frame(now) {
 
   // Rotation: starts centered on the user's longitude, 90 s / revolution.
   world.rotation.y += ROT_SPEED * dt;
-  // Breathing: ±1% scale, 7 s cycle (parity with _breath).
-  breath += dt / 7;
-  const s = 1 + (ease(breath % 1) - 0.5) * 0.02;
-  planet.scale.setScalar(s);
   atmo.material.rotation = 0;
 
   // Particle drift.
