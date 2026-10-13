@@ -4,7 +4,7 @@
 // context: no Flutter pipeline, no canvas re-upload — native GPU speed on
 // mobile Safari/Chrome. Backend identical: Supabase REST RPCs + GeoIP.
 
-import * as THREE from 'three';
+import * as THREE from './three.module.min.js';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const SUPABASE_URL = 'https://xmbwpelfltzobvqdpake.supabase.co';
