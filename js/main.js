@@ -275,10 +275,16 @@ function mulberry(seed) {
   return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
+// Maps a beam's camera-plane sample to world z so the strip depth-tests
+// against the planet: near hemisphere renders in front (bright), far side
+// slides behind the planet surface (ghost hinted through it).
+function depth(i) { return DEPTH_MIN + DEPTH_SPAN * ((i / BEAM_SEGS) - 0.5) * 0; }
+const DEPTH_MIN = 0.001, DEPTH_SPAN = 0;
 // ─── Beams ───────────────────────────────────────────────────────────────────
-// Geo-anchored ribbons that follow the rotation. Far-side portions are NOT
-// clamped to the limb: they pass "through" the globe as a dim ghost — the
-// earth reads as translucent, kindness hinting through the dark side.
+// Geo-anchored, following the rotation. The geodesic is sampled in camera
+// plane; each strip layer carries real depth: mid+core depth-test against the
+// planet (occluded on the far side), the wide faint halo layer does not —
+// the far-side ghost = kindness hinting through the earth.
 const beams = [];
 const bursts = [];
 const pulseTex = glowTexture('rgba(255,240,200,1)', 'rgba(212,175,55,.6)');
@@ -291,10 +297,6 @@ const ringTex = (() => {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
 })();
-const BEAM_SEGS = 44;
-const BEAM_MS = 1800;
-const GHOST = 0.10; // visible brightness of far-side portions through the globe
-// Endpoint markers: rings (soft donut with a bright rim), not blobs.
 const ringSoftTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
@@ -308,8 +310,13 @@ const ringSoftTex = (() => {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace;
   return t;
 })();
+const BEAM_SEGS = 44;
+const BEAM_MS = 1800;
+const GHOST = 0.10;   // brightness of the through-globe ghost
+const Z_NEAR = 1.12;  // beam origin: just in front of the planet's near surface
+const Z_FAR = -1.12;  // beam terminus: behind the far surface → occluded
 
-function beamStrip(color, width, brightness) {
+function beamStrip(color, width, brightness, depthTest) {
   const g = new THREE.BufferGeometry();
   const pos = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
   const col = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
@@ -323,12 +330,13 @@ function beamStrip(color, width, brightness) {
   g.setIndex(idx);
   const m = new THREE.MeshBasicMaterial({
     vertexColors: true, transparent: true, blending: THREE.AdditiveBlending,
-    depthWrite: false, depthTest: false, side: THREE.DoubleSide,
+    depthWrite: false, depthTest: !!depthTest, side: THREE.DoubleSide,
   });
   const mesh = new THREE.Mesh(g, m);
   mesh.frustumCulled = false;
   mesh.renderOrder = 5;
   mesh.userData.w = width;
+  mesh.userData.bright = brightness;
   return mesh;
 }
 
@@ -344,14 +352,9 @@ function glowSprite(map, color, opacity) {
 function fireBeam(from, to, { receive = false } = {}) {
   const color = receive ? GOLD_LIGHT : GOLD;
   const group = new THREE.Group();
-  const widths = [() => 0.036, () => 0.018, () => 0.004];
-  const brights = [() => 0.14, () => 0.40, () => 1.0];
-  const strips = [
-    beamStrip(color, widths[0], brights[0]),
-    beamStrip(color, widths[1], brights[1]),
-    beamStrip(color, widths[2], brights[2]),
-  ];
-  for (const [i, st] of strips.entries()) st.userData.bright = brights[i];
+  const halo = beamStrip(color, () => 0.036, () => 0.14, false); // ghost layer
+  const mid = beamStrip(color, () => 0.018, () => 0.40, true);
+  const core = beamStrip(color, () => 0.004, () => 1.0, true);
   const head = glowSprite(pulseTex, color, 1);
   const origin = glowSprite(ringSoftTex, color, 0);
   const dest = glowSprite(ringSoftTex, color, 0);
@@ -365,36 +368,31 @@ function fireBeam(from, to, { receive = false } = {}) {
   }));
   sparks.frustumCulled = false;
   sparks.renderOrder = 6;
-  group.add(...strips, head, origin, dest, sparks);
+  group.add(halo, mid, core, head, origin, dest, sparks);
   scene.add(group);
   beams.push({
-    from, to, group, strips, head, origin, dest, sparks,
+    from, to, group, halo, mid, core, head, origin, dest, sparks,
     offsets: Array.from({ length: N }, () => Math.random()),
     receive, color, start: performance.now(), durationMs: BEAM_MS,
   });
 }
 
-// Camera-plane position: orthographic — far-side points keep their true
-// (in-disc) x,y; no limb clamping.
+// Camera-plane positions (orthographic): far-side points keep their true
+// in-disc x,y — the depth below does the occlusion work.
 function projectGeo(lat, lon, centerLon, r = 1.005) {
   const lam = (lon - centerLon) * Math.PI / 180;
   const phi = lat * Math.PI / 180;
-  const x = Math.cos(phi) * Math.sin(lam);
-  const y = Math.sin(phi);
-  return { x: x * r, y: y * r };
+  return { x: Math.cos(phi) * Math.sin(lam) * r, y: Math.sin(phi) * r };
 }
-// True 3D unit vector on the sphere: for slerp + camera-depth computation.
 function geoUnit(lat, lon) {
   const lam = lon * Math.PI / 180, phi = lat * Math.PI / 180;
   return new THREE.Vector3(Math.cos(phi) * Math.sin(lam), Math.sin(phi), Math.cos(phi) * Math.cos(lam));
 }
-function setStrip(attr, i6, x, y, nx, ny, w) {
-  attr.array[i6 + 0] = x + nx * w; attr.array[i6 + 1] = y + ny * w; attr.array[i6 + 2] = 0.05;
-  attr.array[i6 + 3] = x - nx * w; attr.array[i6 + 4] = y - ny * w; attr.array[i6 + 5] = 0.05;
+function setStrip(attr, i6, x, y, nx, ny, w, z) {
+  attr.array[i6 + 0] = x + nx * w; attr.array[i6 + 1] = y + ny * w; attr.array[i6 + 2] = z;
+  attr.array[i6 + 3] = x - nx * w; attr.array[i6 + 4] = y - ny * w; attr.array[i6 + 5] = z;
 }
 
-// Curve samples + per-sample visibility brightness: near side = 1, far side
-// through the planet = GHOST. Slerp the geodesic, rotate, read camera z.
 function beamGeo(b, centerLon) {
   const u0 = geoUnit(b.from[0], b.from[1]);
   const u1 = geoUnit(b.to[0], b.to[1]);
@@ -405,7 +403,6 @@ function beamGeo(b, centerLon) {
   if (mid.length() < 1e-4) mid.set(0, lift); else mid.multiplyScalar(lift);
 
   const omega = u0.angleTo(u1), so = Math.sin(omega);
-  const rotAxis = new THREE.Vector3(0, 1, 0), rotY = world.rotation.y;
   const tmp = new THREE.Vector3();
   const pts = [], br = [];
   for (let s = 0; s <= BEAM_SEGS; s++) {
@@ -414,14 +411,12 @@ function beamGeo(b, centerLon) {
       inv * inv * a.x + 2 * inv * t * mid.x + t * t * c.x,
       inv * inv * a.y + 2 * inv * t * mid.y + t * t * c.y,
     ));
-    // slerp along the geodesic (handles antipodal by falling back to lerp)
     let v;
     if (so < 1e-4) v = tmp.copy(u0).lerp(u1, t);
     else v = tmp.copy(u0).multiplyScalar(Math.sin((1 - t) * omega) / so)
       .addScaledVector(u1, Math.sin(t * omega) / so);
-    v.applyAxisAngle(rotAxis, rotY);
-    const z = v.z;
-    // near → bright, far → ghost hinted through the planet
+    v.applyAxisAngle(new THREE.Vector3(0, 1, 0), world.rotation.y);
+    const z = v.z; // −1 … +1: hemisphere depth
     const k = Math.max(0, Math.min(1, (z + 0.15) / 0.45)); // 0 far … 1 near
     br.push(GHOST + (1 - GHOST) * (k * k * (3 - 2 * k)));
   }
@@ -431,7 +426,6 @@ function beamGeo(b, centerLon) {
 function updateBeams(now) {
   // Beams follow the live rotation.
   const centerLon = -(world.rotation.y * 180 / Math.PI + 90);
-  const cGold = new THREE.Color(0xffffff);
   for (let i = beams.length - 1; i >= 0; i--) {
     const b = beams[i];
     const p = Math.min((now - b.start) / b.durationMs, 1);
@@ -439,23 +433,24 @@ function updateBeams(now) {
     const { pts, br, a, c } = beamGeo(b, centerLon);
     const base = new THREE.Color(b.color);
 
-    for (const [si, strip] of b.strips.entries()) {
+    for (const [si, strip] of [b.halo, b.mid, b.core].entries()) {
       const pos = strip.geometry.attributes.position;
       const col = strip.geometry.attributes.color;
-      const bProfile = strip.userData.bright;
       for (let s = 0; s <= BEAM_SEGS; s++) {
         const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
         const dx = next.x - prev.x, dy = next.y - prev.y;
         const len = Math.hypot(dx, dy) || 1e-4;
         const nx = -dy / len, ny = dx / len;
         const t = s / BEAM_SEGS;
-        // rounded caps + gentle traveling energy wave
-        const cap = Math.pow(Math.sin(Math.PI * t), 0.7);
+        const cap = Math.pow(Math.sin(Math.PI * t), 0.7);          // rounded caps
         const ph = s * 0.24 - now * 0.010;
-        const off = Math.sin(Math.PI * t) * 0.009 * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
+        const off = Math.sin(Math.PI * t) * 0.009                 // gentle energy wave
+          * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
+        // depth per segment: near end in front, far end behind the planet
+        const z = 2.0 - (strip === b.halo ? 0 : Z_NEAR - (Z_NEAR - Z_FAR) * t);
         setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny,
-          (typeof strip.userData.w === "function" ? strip.userData.w(t) : strip.userData.w) * cap);
-        const lum = (typeof bProfile === "function" ? bProfile(t) : bProfile) * br[s];
+          strip.userData.w(t) * cap, z);
+        const lum = strip.userData.bright(t) * br[s];
         for (const o of [s * 6, s * 6 + 3]) {
           col.array[o] = base.r * lum; col.array[o + 1] = base.g * lum; col.array[o + 2] = base.b * lum;
         }
@@ -465,9 +460,9 @@ function updateBeams(now) {
       strip.material.opacity = env;
     }
 
-    // Head rides the arc, dimming through the far side.
+    // Head rides the arc — halo over the globe when near, faint when far.
     const hi = Math.round(p * BEAM_SEGS);
-    b.head.position.set(pts[hi].x, pts[hi].y, 0.06 + br[hi]); // z lifted when near → haloed
+    b.head.position.set(pts[hi].x, pts[hi].y, 0.06);
     b.head.scale.setScalar(Math.max(0.11 * env * (GHOST + 0.9 * br[hi]), 0.0001));
     b.head.material.opacity = env * (GHOST + (1 - GHOST) * br[hi]);
 
@@ -481,7 +476,7 @@ function updateBeams(now) {
     b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001));
     b.dest.material.opacity = dIn * env * (GHOST + (1 - GHOST) * br[BEAM_SEGS]);
 
-    // Sparks flow through the beam, ghosting with their depth.
+    // Sparks flow through the beam, ghosting by their sample depth.
     const sp = b.sparks.geometry.attributes.position;
     const flow = (now - b.start) / 650;
     for (let k = 0; k < b.offsets.length; k++) {
@@ -494,7 +489,6 @@ function updateBeams(now) {
     b.sparks.material.opacity = 0.85 * env;
 
     if (p >= 1) {
-      // Arrival ring burst — only when the destination is on the near side.
       if (br[BEAM_SEGS] > 0.5) {
         const ring = new THREE.Sprite(new THREE.SpriteMaterial({
           map: ringTex, color: b.color, transparent: true,
@@ -506,7 +500,7 @@ function updateBeams(now) {
         bursts.push({ ring, start: now });
       }
       scene.remove(b.group);
-      for (const st of b.strips) { st.geometry.dispose(); st.material.dispose(); }
+      for (const st of [b.halo, b.mid, b.core]) { st.geometry.dispose(); st.material.dispose(); }
       b.sparks.geometry.dispose(); b.sparks.material.dispose();
       for (const k of ["head", "origin", "dest"]) b[k].material.dispose();
       beams.splice(i, 1);
@@ -671,5 +665,5 @@ function frame(now) {
   setInterval(pollCounter, 3000);
   requestAnimationFrame(frame);
   const l = document.getElementById('loading'); if (l) { l.classList.add('done'); setTimeout(() => l.remove(), 600); }
-  window.__dbg = { camera, renderer, scene, world, planet, latLonToVec3, anchorOf, geoUnit, projectGeo, beams, THREE };
+  window.__dbg = { camera, renderer, scene, world, planet, latLonToVec3, anchorOf, geoUnit, projectGeo, beams, THREE, depth };
 })();
