@@ -171,6 +171,7 @@ world.add(planet);
 // Atmosphere bloom — canvas radial gradient sprite, additive. Ring profile:
 // transparent over the disc (the sphere supplies its own light), peaking at
 // the limb, falling off outward — otherwise the sprite fogs the whole planet.
+const atmoBreathe = { phase: 0 };
 const atmo = new THREE.Sprite(new THREE.SpriteMaterial({
   map: (() => {
     const c = document.createElement('canvas'); c.width = c.height = 256;
@@ -214,17 +215,32 @@ world.add(haze);
 
 // The Golden Thread — the brief's unbroken filament circling the earth;
 // sweeps independently of the globe's spin.
+// The Heal In Tree signature: ONE delicate golden thread circling the earth
+// with a soft light pulse traveling it — the "invisible golden thread" made
+// visible. Stationary globe; the thread alone carries the ambient motion.
 const threads = new THREE.Group();
-for (const [rx, rz] of [[0.5, 0.35], [-0.35, -0.55]]) {
-  const t = new THREE.Mesh(
-    new THREE.TorusGeometry(1.12, 0.006, 8, 128),
-    new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.6,
-      blending: THREE.AdditiveBlending, depthWrite: false }),
-  );
-  t.rotation.set(rx, 0, rz);
-  threads.add(t);
-}
+const sigTorus = new THREE.Mesh(
+  new THREE.TorusGeometry(1.12, 0.0055, 8, 160),
+  new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.5,
+    blending: THREE.AdditiveBlending, depthWrite: false }),
+);
+sigTorus.rotation.set(0.52, 0, 0.28);
+threads.add(sigTorus);
+const sigTraveler = (() => {
+  const holder = new THREE.Group();
+  holder.rotation.set(0.52, 0, 0.28);
+  const node = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: SOFT, color: GOLD_LIGHT, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+  }));
+  node.scale.setScalar(0.14);
+  node.position.set(1.12, 0, 0);
+  holder.add(node);
+  threads.add(holder);
+  return { holder, node };
+})();
 scene.add(threads);
+const SIG_PERIOD = 9000; // ms per orbit — unhurried, elegant
 
 function glowTexture(inner, outer) {
   const c = document.createElement('canvas'); c.width = c.height = 256;
@@ -616,7 +632,7 @@ privacySheet.querySelector('.back').addEventListener('click', () => privacySheet
 
 // ─── Frame loop ──────────────────────────────────────────────────────────────
 let last = performance.now();
-const ROT_SPEED = (Math.PI * 2) / 45; // 45 s / revolution — livelier
+
 
 function resize() {
   const w = innerWidth, h = innerHeight;
@@ -647,9 +663,13 @@ function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
 
-  // Rotation: starts centered on the user's longitude, 90 s / revolution.
-  world.rotation.y += ROT_SPEED * dt;
-  atmo.material.rotation = 0;
+  // Stationary globe; the signature thread + atmosphere carry the motion.
+  atmoBreathe.phase += dt / 5.2;
+  const br = 0.8 + 0.2 * Math.sin(atmoBreathe.phase * Math.PI * 2); // 0.6 … 1.0
+  atmo.material.opacity = 0.8 * br;
+  haze.material.opacity = 0.35 * br;
+  sigTraveler.holder.rotation.z = (now % SIG_PERIOD) / SIG_PERIOD * Math.PI * 2;
+  sigTraveler.node.material.opacity = 0.75 + 0.25 * Math.sin(now * 0.004);
 
   // Particle drift.
   const pos = specks.points.geometry.attributes.position;
