@@ -291,6 +291,9 @@ function beamStrip(color, width) {
 }
 
 function fireBeam(from, to, { receive = false } = {}) {
+  // Freeze the beam's geometry to the rotation at fire time — the arc stays
+  // fixed where it appeared while the globe keeps turning underneath.
+  const centerLon0 = -(world.rotation.y * 180 / Math.PI + 90);
   const color = receive ? GOLD_LIGHT : GOLD;
   const core = beamStrip(color, 0.014);
   const glow = beamStrip(color, 0.05);
@@ -302,7 +305,7 @@ function fireBeam(from, to, { receive = false } = {}) {
   const group = new THREE.Group();
   group.add(glow, core, head);
   scene.add(group);
-  beams.push({ from, to, group, core, glow, head, start: performance.now(), durationMs: 2500, receive });
+  beams.push({ from, to, centerLon0, group, core, glow, head, start: performance.now(), durationMs: 2500, receive });
 }
 
 // Orthographic projection with limb clamp (port of PlanetProjection):
@@ -332,13 +335,13 @@ function setStrip(attr, i6, x, y, nx, ny, w) {
   attr.array[i6 + 3] = x - nx * w; attr.array[i6 + 4] = y - ny * w; attr.array[i6 + 5] = 0.05;
 }
 
-function updateBeams(now, centerLon) {
+function updateBeams(now) {
   for (let i = beams.length - 1; i >= 0; i--) {
     const b = beams[i];
     const p = Math.min((now - b.start) / b.durationMs, 1);
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
-    const a = projectGeo(b.from[0], b.from[1], centerLon);
-    const c = projectGeo(b.to[0], b.to[1], centerLon);
+    const a = projectGeo(b.from[0], b.from[1], b.centerLon0);
+    const c = projectGeo(b.to[0], b.to[1], b.centerLon0);
     const lift = 1 + 0.18 + geoUnit(b.from[0], b.from[1]).angleTo(geoUnit(b.to[0], b.to[1])) * 0.10;
     const mid = new THREE.Vector2((a.x + c.x) / 2, (a.y + c.y) / 2);
     mid.set((a.x + c.x) / 2, (a.y + c.y) / 2);
@@ -507,8 +510,7 @@ function frame(now) {
   }
   pos.needsUpdate = true;
 
-  const centerLon = -(world.rotation.y * 180 / Math.PI + 90);
-  updateBeams(now, centerLon);
+  updateBeams(now);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
