@@ -335,15 +335,33 @@ function glowSprite(map, color, opacity) {
 function fireBeam(from, to, { receive = false } = {}) {
   const color = receive ? GOLD_LIGHT : GOLD;
   const group = new THREE.Group();
-  const core = beamStrip(color, (t) => 0.003 + 0.012 * Math.sin(Math.PI * t), (t) => 0.85 + 0.15 * t);
-  const glow = beamStrip(color, (t) => 0.006 + 0.042 * Math.sin(Math.PI * t), () => 0.5);
+  // Layered soft glow: wide faint → mid → bright hairline core. No hard edges.
+  const widths = [() => 0.036, () => 0.018, () => 0.007];
+  const strips = [
+    beamStrip(color, widths[0], () => 0.14),
+    beamStrip(color, widths[1], () => 0.40),
+    beamStrip(color, widths[2], () => 1.0),
+  ];
+  for (const [i, st] of strips.entries()) st.geometry.userData.w = widths[i];
   const head = glowSprite(pulseTex, color, 1);
   const origin = glowSprite(ringSoftTex, color, 0);
   const dest = glowSprite(ringSoftTex, color, 0);
-  group.add(glow, core, head, origin, dest);
+  // Spark stream flowing through the beam — the "energy" carriers.
+  const N = 9;
+  const spos = new Float32Array(N * 3);
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.BufferAttribute(spos, 3).setUsage(THREE.DynamicDrawUsage));
+  const sparks = new THREE.Points(sg, new THREE.PointsMaterial({
+    size: 0.055, map: pulseTex, color: GOLD_LIGHT, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+  }));
+  sparks.frustumCulled = false;
+  sparks.renderOrder = 6;
+  group.add(...strips, head, origin, dest, sparks);
   scene.add(group);
   beams.push({
-    from, to, group, core, glow, head, origin, dest,
+    from, to, group, strips, head, origin, dest, sparks,
+    offsets: Array.from({ length: N }, () => Math.random()),
     receive, color, start: performance.now(), durationMs: BEAM_MS,
   });
 }
@@ -395,29 +413,36 @@ function updateBeams(now) {
     const b = beams[i];
     const p = Math.min((now - b.start) / b.durationMs, 1);
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
-    const { pts: base, a, c } = beamPoints(b, centerLon);
-    // Slight energy feel: broad, gentle undulation (zero at both endpoints),
-    // applied perpendicular to the ribbon in the fill loop below.
-    const pts = base;
+    const { pts, a, c } = beamPoints(b, centerLon);
 
-    const pos0 = b.core.geometry.attributes.position;
-    const pos1 = b.glow.geometry.attributes.position;
-    for (let s = 0; s <= BEAM_SEGS; s++) {
-      const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
-      const dx = next.x - prev.x, dy = next.y - prev.y;
-      const len = Math.hypot(dx, dy) || 1e-4;
-      const nx = -dy / len, ny = dx / len;
-      setStrip(pos0, s * 6, pts[s].x, pts[s].y, nx, ny, 0.014);
-      setStrip(pos1, s * 6, pts[s].x, pts[s].y, nx, ny, 0.05);
+    // Traveling energy wave: two layered sines flowing along the beam,
+    // zero amplitude at both endpoints so the rings stay exact.
+    const wob = (s) => {
+      const k = Math.sin(Math.PI * s / BEAM_SEGS);
+      const ph = s * 0.85 - now * 0.012;
+      return k * 0.02 * (Math.sin(ph) + 0.5 * Math.sin(ph * 2.37 + 1.3));
+    };
+
+    for (const [si, strip] of b.strips.entries()) {
+      const pos = strip.geometry.attributes.position;
+      for (let s = 0; s <= BEAM_SEGS; s++) {
+        const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
+        const dx = next.x - prev.x, dy = next.y - prev.y;
+        const len = Math.hypot(dx, dy) || 1e-4;
+        const nx = -dy / len, ny = dx / len;
+        const t = s / BEAM_SEGS;
+        const off = wob(s);
+        const w = strip.geometry.userData.w ? strip.geometry.userData.w : 0;
+        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny,
+          typeof w === "function" ? w(t) : w);
+      }
+      pos.needsUpdate = true;
+      strip.material.opacity = env;
     }
-    pos0.needsUpdate = true;
-    pos1.needsUpdate = true;
-    b.core.material.opacity = env;
-    b.glow.material.opacity = 0.32 * env * (0.85 + 0.15 * Math.sin(now * 0.02));
 
     // Head rides the arc.
     b.head.position.set(pts[Math.round(p * BEAM_SEGS)].x, pts[Math.round(p * BEAM_SEGS)].y, 0.06);
-    b.head.scale.setScalar(Math.max((0.13 + 0.05 * Math.sin(p * Math.PI)) * env, 0.0001));
+    b.head.scale.setScalar(Math.max(0.11 * env, 0.0001));
     b.head.material.opacity = env;
 
     // Origin bloom: swells in during launch, rides its anchor, fades last.
@@ -432,6 +457,18 @@ function updateBeams(now) {
     b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001));
     b.dest.material.opacity = dIn * env;
 
+    // Sparks flow through the beam faster than the head — energy current.
+    const sp = b.sparks.geometry.attributes.position;
+    const flow = (now - b.start) / 650;
+    for (let k = 0; k < b.offsets.length; k++) {
+      const t = (b.offsets[k] + flow) % 1;
+      const s = t * BEAM_SEGS, s0 = Math.floor(s), fr = s - s0;
+      const p0 = pts[Math.min(s0, BEAM_SEGS)], p1 = pts[Math.min(s0 + 1, BEAM_SEGS)];
+      sp.setXYZ(k, p0.x + (p1.x - p0.x) * fr, p0.y + (p1.y - p0.y) * fr, 0.055);
+    }
+    sp.needsUpdate = true;
+    b.sparks.material.opacity = 0.85 * env;
+
     if (p >= 1) {
       // Arrival ring burst at the destination.
       const ring = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -443,7 +480,8 @@ function updateBeams(now) {
       scene.add(ring);
       bursts.push({ ring, start: now });
       scene.remove(b.group);
-      for (const k of ["core", "glow"]) { b[k].geometry.dispose(); b[k].material.dispose(); }
+      for (const st of b.strips) { st.geometry.dispose(); st.material.dispose(); }
+      b.sparks.geometry.dispose(); b.sparks.material.dispose();
       for (const k of ["head", "origin", "dest"]) b[k].material.dispose();
       beams.splice(i, 1);
     }
