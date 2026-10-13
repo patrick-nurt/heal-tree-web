@@ -313,7 +313,7 @@ const ringSoftTex = (() => {
 })();
 const BEAM_SEGS = 44;
 const BEAM_MS = 1800;
-const GHOST = 0.12; // brightness of far-side portions (hinting through)
+const GHOST = 0.06;  // brightness of far-side portions (whisper through)
 const Z_BEAM = 0.05;
 
 function beamStrip(color, w0, b0, order) {
@@ -453,7 +453,7 @@ function updateBeams(now) {
         const vis = sstep(0.30, 0.55, br[s]);                  // 0 behind … 1 near
         let w, lum;
         if (isGhost) {
-          w = w0 * cap * (1 + 0.8 * (1 - br[s]));              // widened behind = soft
+          w = w0 * cap * (1 + 0.35 * (1 - br[s]));             // slightly softened behind
           lum = b0 * (GHOST + (1 - GHOST) * br[s]);
         } else {
           w = w0 * cap * vis;                                  // crisp fades out behind
@@ -474,17 +474,17 @@ function updateBeams(now) {
     const hi = Math.round(p * BEAM_SEGS);
     b.head.position.set(pts[hi].x, pts[hi].y, Z_BEAM + 0.01);
     b.head.scale.setScalar(Math.max((0.11 - 0.04 * (1 - br[hi])) * env * (0.3 + 0.7 * br[hi]), 0.0001));
-    b.head.material.opacity = env * (0.15 + 0.85 * br[hi]);
+    b.head.material.opacity = env * (0.05 + 0.95 * br[hi]);
 
     // Origin / destination rings ride their anchors, ghosted behind.
     b.origin.position.set(a.x, a.y, Z_BEAM + 0.005);
     const oIn = Math.min(p / 0.10, 1);
     b.origin.scale.setScalar(Math.max(0.07 + 0.20 * oIn, 0.0001) * (0.55 + 0.45 * br[0]));
-    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (0.12 + 0.88 * br[0]);
+    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (0.06 + 0.94 * br[0]);
     b.dest.position.set(c.x, c.y, Z_BEAM + 0.005);
     const dIn = Math.min(Math.max((p - 0.70) / 0.25, 0), 1);
     b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001) * (0.55 + 0.45 * br[BEAM_SEGS]));
-    b.dest.material.opacity = dIn * env * (0.12 + 0.88 * br[BEAM_SEGS]);
+    b.dest.material.opacity = dIn * env * (0.06 + 0.94 * br[BEAM_SEGS]);
 
     // Sparks flow through the beam; dim as a group by the mean depth.
     const sp = b.sparks.geometry.attributes.position;
@@ -496,7 +496,7 @@ function updateBeams(now) {
       sp.setXYZ(k, p0.x + (p1.x - p0.x) * fr, p0.y + (p1.y - p0.y) * fr, Z_BEAM + 0.005);
     }
     sp.needsUpdate = true;
-    b.sparks.material.opacity = 0.85 * env * (0.25 + 0.75 * (brSum / (BEAM_SEGS + 1)));
+    b.sparks.material.opacity = 0.85 * env * (0.08 + 0.92 * (brSum / (BEAM_SEGS + 1)));
 
     if (p >= 1) {
       if (br[BEAM_SEGS] > 0.35) {
