@@ -294,6 +294,20 @@ const ringTex = (() => {
 const BEAM_SEGS = 44;
 const BEAM_MS = 1800;
 const GHOST = 0.10; // visible brightness of far-side portions through the globe
+// Endpoint markers: rings (soft donut with a bright rim), not blobs.
+const ringSoftTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0.00, 'rgba(255,225,150,0)');
+  grad.addColorStop(0.58, 'rgba(255,225,150,0)');
+  grad.addColorStop(0.72, 'rgba(255,225,150,0.85)');
+  grad.addColorStop(0.82, 'rgba(212,175,55,0.30)');
+  grad.addColorStop(1.00, 'rgba(212,175,55,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace;
+  return t;
+})();
 
 function beamStrip(color, width, brightness) {
   const g = new THREE.BufferGeometry();
