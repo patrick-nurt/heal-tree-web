@@ -276,9 +276,9 @@ function mulberry(seed) {
 }
 
 // ─── Beams ───────────────────────────────────────────────────────────────────
-// Geo-anchored: endpoints are re-projected every frame so beams ride the
-// rotation, always visible (far side clamps to the limb). Origin blooms in,
-// destination blooms as the pulse arrives, ring burst on landing.
+// Geo-anchored ribbons that follow the rotation. Far-side portions are NOT
+// clamped to the limb: they pass "through" the globe as a dim ghost — the
+// earth reads as translucent, kindness hinting through the dark side.
 const beams = [];
 const bursts = [];
 const pulseTex = glowTexture('rgba(255,240,200,1)', 'rgba(212,175,55,.6)');
@@ -293,40 +293,20 @@ const ringTex = (() => {
 })();
 const BEAM_SEGS = 44;
 const BEAM_MS = 1800;
-// Endpoint markers are rings (not blobs): soft donut with a bright rim.
-const ringSoftTex = (() => {
-  const c = document.createElement('canvas'); c.width = c.height = 128;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0.00, 'rgba(255,225,150,0)');
-  grad.addColorStop(0.58, 'rgba(255,225,150,0)');
-  grad.addColorStop(0.72, 'rgba(255,225,150,0.85)');
-  grad.addColorStop(0.82, 'rgba(212,175,55,0.30)');
-  grad.addColorStop(1.00, 'rgba(212,175,55,0)');
-  g.fillStyle = grad; g.fillRect(0, 0, 128, 128);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-})();
+const GHOST = 0.10; // visible brightness of far-side portions through the globe
 
 function beamStrip(color, width, brightness) {
   const g = new THREE.BufferGeometry();
   const pos = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
   const col = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3).setUsage(THREE.DynamicDrawUsage));
   const idx = [];
   for (let i = 0; i < BEAM_SEGS; i++) {
     const a = i * 2, b = i * 2 + 1;
     idx.push(a, b, a + 2, b, b + 2, a + 2);
   }
   g.setIndex(idx);
-  const c = new THREE.Color(color);
-  for (let s = 0; s <= BEAM_SEGS; s++) {
-    const br = brightness(s / BEAM_SEGS);
-    for (const o of [s * 6, s * 6 + 3]) {
-      col[o] = c.r * br; col[o + 1] = c.g * br; col[o + 2] = c.b * br;
-    }
-  }
   const m = new THREE.MeshBasicMaterial({
     vertexColors: true, transparent: true, blending: THREE.AdditiveBlending,
     depthWrite: false, depthTest: false, side: THREE.DoubleSide,
@@ -334,6 +314,7 @@ function beamStrip(color, width, brightness) {
   const mesh = new THREE.Mesh(g, m);
   mesh.frustumCulled = false;
   mesh.renderOrder = 5;
+  mesh.userData.w = width;
   return mesh;
 }
 
@@ -349,18 +330,17 @@ function glowSprite(map, color, opacity) {
 function fireBeam(from, to, { receive = false } = {}) {
   const color = receive ? GOLD_LIGHT : GOLD;
   const group = new THREE.Group();
-  // Layered soft glow: wide faint → mid → bright hairline core. No hard edges.
-  const widths = [() => 0.016, () => 0.009, () => 0.004];
+  const widths = [() => 0.036, () => 0.018, () => 0.004];
+  const brights = [() => 0.14, () => 0.40, () => 1.0];
   const strips = [
-    beamStrip(color, widths[0], () => 0.14),
-    beamStrip(color, widths[1], () => 0.40),
-    beamStrip(color, widths[2], () => 1.0),
+    beamStrip(color, widths[0], brights[0]),
+    beamStrip(color, widths[1], brights[1]),
+    beamStrip(color, widths[2], brights[2]),
   ];
-  for (const [i, st] of strips.entries()) st.geometry.userData.w = widths[i];
+  for (const [i, st] of strips.entries()) st.userData.bright = brights[i];
   const head = glowSprite(pulseTex, color, 1);
   const origin = glowSprite(ringSoftTex, color, 0);
   const dest = glowSprite(ringSoftTex, color, 0);
-  // Spark stream flowing through the beam — the "energy" carriers.
   const N = 9;
   const spos = new Float32Array(N * 3);
   const sg = new THREE.BufferGeometry();
@@ -380,21 +360,16 @@ function fireBeam(from, to, { receive = false } = {}) {
   });
 }
 
-// Orthographic projection with limb clamp (Flutter PlanetProjection parity):
-// far-side points ride the limb silhouette instead of disappearing.
+// Camera-plane position: orthographic — far-side points keep their true
+// (in-disc) x,y; no limb clamping.
 function projectGeo(lat, lon, centerLon, r = 1.005) {
   const lam = (lon - centerLon) * Math.PI / 180;
   const phi = lat * Math.PI / 180;
   const x = Math.cos(phi) * Math.sin(lam);
   const y = Math.sin(phi);
-  const z = Math.cos(phi) * Math.cos(lam);
-  let px = x, py = y;
-  if (z <= 0.10) {
-    const m = Math.hypot(x, y);
-    if (m < 1e-6) { px = 0; py = 0.97; } else { px = x / m * 0.97; py = y / m * 0.97; }
-  }
-  return { x: px * r, y: py * r };
+  return { x: x * r, y: y * r };
 }
+// True 3D unit vector on the sphere: for slerp + camera-depth computation.
 function geoUnit(lat, lon) {
   const lam = lon * Math.PI / 180, phi = lat * Math.PI / 180;
   return new THREE.Vector3(Math.cos(phi) * Math.sin(lam), Math.sin(phi), Math.cos(phi) * Math.cos(lam));
@@ -403,78 +378,96 @@ function setStrip(attr, i6, x, y, nx, ny, w) {
   attr.array[i6 + 0] = x + nx * w; attr.array[i6 + 1] = y + ny * w; attr.array[i6 + 2] = 0.05;
   attr.array[i6 + 3] = x - nx * w; attr.array[i6 + 4] = y - ny * w; attr.array[i6 + 5] = 0.05;
 }
-function beamPoints(b, centerLon) {
+
+// Curve samples + per-sample visibility brightness: near side = 1, far side
+// through the planet = GHOST. Slerp the geodesic, rotate, read camera z.
+function beamGeo(b, centerLon) {
+  const u0 = geoUnit(b.from[0], b.from[1]);
+  const u1 = geoUnit(b.to[0], b.to[1]);
   const a = projectGeo(b.from[0], b.from[1], centerLon);
   const c = projectGeo(b.to[0], b.to[1], centerLon);
-  const lift = 1 + 0.16 + geoUnit(b.from[0], b.from[1]).angleTo(geoUnit(b.to[0], b.to[1])) * 0.09;
+  const lift = 1 + 0.16 + u0.angleTo(u1) * 0.09;
   const mid = new THREE.Vector2((a.x + c.x) / 2, (a.y + c.y) / 2);
   if (mid.length() < 1e-4) mid.set(0, lift); else mid.multiplyScalar(lift);
-  const pts = [];
+
+  const omega = u0.angleTo(u1), so = Math.sin(omega);
+  const rotAxis = new THREE.Vector3(0, 1, 0), rotY = world.rotation.y;
+  const tmp = new THREE.Vector3();
+  const pts = [], br = [];
   for (let s = 0; s <= BEAM_SEGS; s++) {
     const t = s / BEAM_SEGS, inv = 1 - t;
     pts.push(new THREE.Vector2(
       inv * inv * a.x + 2 * inv * t * mid.x + t * t * c.x,
       inv * inv * a.y + 2 * inv * t * mid.y + t * t * c.y,
     ));
+    // slerp along the geodesic (handles antipodal by falling back to lerp)
+    let v;
+    if (so < 1e-4) v = tmp.copy(u0).lerp(u1, t);
+    else v = tmp.copy(u0).multiplyScalar(Math.sin((1 - t) * omega) / so)
+      .addScaledVector(u1, Math.sin(t * omega) / so);
+    v.applyAxisAngle(rotAxis, rotY);
+    const z = v.z;
+    // near → bright, far → ghost hinted through the planet
+    const k = Math.max(0, Math.min(1, (z + 0.15) / 0.45)); // 0 far … 1 near
+    br.push(GHOST + (1 - GHOST) * (k * k * (3 - 2 * k)));
   }
-  return { pts, a, c };
+  return { pts, br, a, c };
 }
 
 function updateBeams(now) {
-  // Beams ride the live rotation: facing longitude derives from the globe.
+  // Beams follow the live rotation.
   const centerLon = -(world.rotation.y * 180 / Math.PI + 90);
+  const cGold = new THREE.Color(0xffffff);
   for (let i = beams.length - 1; i >= 0; i--) {
     const b = beams[i];
     const p = Math.min((now - b.start) / b.durationMs, 1);
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
-    const { pts, a, c } = beamPoints(b, centerLon);
-
-    // Traveling energy wave: two layered sines flowing along the beam,
-    // zero amplitude at both endpoints so the rings stay exact.
-    const wob = (s) => {
-      const k = Math.sin(Math.PI * s / BEAM_SEGS);
-      const ph = s * 0.24 - now * 0.010;
-      return k * 0.009 * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
-    };
+    const { pts, br, a, c } = beamGeo(b, centerLon);
+    const base = new THREE.Color(b.color);
 
     for (const [si, strip] of b.strips.entries()) {
       const pos = strip.geometry.attributes.position;
+      const col = strip.geometry.attributes.color;
+      const bProfile = strip.userData.bright;
       for (let s = 0; s <= BEAM_SEGS; s++) {
         const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
         const dx = next.x - prev.x, dy = next.y - prev.y;
         const len = Math.hypot(dx, dy) || 1e-4;
         const nx = -dy / len, ny = dx / len;
         const t = s / BEAM_SEGS;
-        const off = wob(s);
-        // Rounded caps: full width through the middle, tapering to a point
-        // over the first/last 12% so the beam never meets the rings squared.
+        // rounded caps + gentle traveling energy wave
         const cap = Math.pow(Math.sin(Math.PI * t), 0.7);
-        const w0 = strip.geometry.userData.w ? strip.geometry.userData.w : 0;
-        const w = (typeof w0 === "function" ? w0(t) : w0) * cap;
-        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny, w);
+        const ph = s * 0.24 - now * 0.010;
+        const off = Math.sin(Math.PI * t) * 0.009 * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
+        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny,
+          (typeof strip.userData.w === "function" ? strip.userData.w(t) : strip.userData.w) * cap);
+        const lum = (typeof bProfile === "function" ? bProfile(t) : bProfile) * br[s];
+        for (const o of [s * 6, s * 6 + 3]) {
+          col.array[o] = base.r * lum; col.array[o + 1] = base.g * lum; col.array[o + 2] = base.b * lum;
+        }
       }
       pos.needsUpdate = true;
+      col.needsUpdate = true;
       strip.material.opacity = env;
     }
 
-    // Head rides the arc.
-    b.head.position.set(pts[Math.round(p * BEAM_SEGS)].x, pts[Math.round(p * BEAM_SEGS)].y, 0.06);
-    b.head.scale.setScalar(Math.max(0.11 * env, 0.0001));
-    b.head.material.opacity = env;
+    // Head rides the arc, dimming through the far side.
+    const hi = Math.round(p * BEAM_SEGS);
+    b.head.position.set(pts[hi].x, pts[hi].y, 0.06 + br[hi]); // z lifted when near → haloed
+    b.head.scale.setScalar(Math.max(0.11 * env * (GHOST + 0.9 * br[hi]), 0.0001));
+    b.head.material.opacity = env * (GHOST + (1 - GHOST) * br[hi]);
 
-    // Origin bloom: swells in during launch, rides its anchor, fades last.
+    // Origin / destination rings ride their anchors, ghosted on the far side.
     b.origin.position.set(a.x, a.y, 0.055);
     const oIn = Math.min(p / 0.10, 1);
     b.origin.scale.setScalar(Math.max(0.07 + 0.20 * oIn, 0.0001));
-    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env;
-
-    // Destination bloom: grows as the pulse approaches, holds while lit.
+    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (GHOST + (1 - GHOST) * br[0]);
     b.dest.position.set(c.x, c.y, 0.055);
     const dIn = Math.min(Math.max((p - 0.70) / 0.25, 0), 1);
     b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001));
-    b.dest.material.opacity = dIn * env;
+    b.dest.material.opacity = dIn * env * (GHOST + (1 - GHOST) * br[BEAM_SEGS]);
 
-    // Sparks flow through the beam faster than the head — energy current.
+    // Sparks flow through the beam, ghosting with their depth.
     const sp = b.sparks.geometry.attributes.position;
     const flow = (now - b.start) / 650;
     for (let k = 0; k < b.offsets.length; k++) {
@@ -487,15 +480,17 @@ function updateBeams(now) {
     b.sparks.material.opacity = 0.85 * env;
 
     if (p >= 1) {
-      // Arrival ring burst at the destination.
-      const ring = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: ringTex, color: b.color, transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, opacity: 0.9,
-      }));
-      ring.position.set(c.x, c.y, 0.06);
-      ring.renderOrder = 7;
-      scene.add(ring);
-      bursts.push({ ring, start: now });
+      // Arrival ring burst — only when the destination is on the near side.
+      if (br[BEAM_SEGS] > 0.5) {
+        const ring = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: ringTex, color: b.color, transparent: true,
+          blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, opacity: 0.9,
+        }));
+        ring.position.set(c.x, c.y, 0.06);
+        ring.renderOrder = 7;
+        scene.add(ring);
+        bursts.push({ ring, start: now });
+      }
       scene.remove(b.group);
       for (const st of b.strips) { st.geometry.dispose(); st.material.dispose(); }
       b.sparks.geometry.dispose(); b.sparks.material.dispose();
@@ -662,5 +657,5 @@ function frame(now) {
   setInterval(pollCounter, 3000);
   requestAnimationFrame(frame);
   const l = document.getElementById('loading'); if (l) { l.classList.add('done'); setTimeout(() => l.remove(), 600); }
-  window.__dbg = { camera, renderer, scene, world, planet, latLonToVec3, anchorOf };
+  window.__dbg = { camera, renderer, scene, world, planet, latLonToVec3, anchorOf, geoUnit, projectGeo, beams, THREE };
 })();
