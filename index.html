@@ -64,7 +64,17 @@
     border: 1px solid rgba(212,175,55,.45);
     transition: border-color .35s ease;
   }
-  .action .ripple {
+  .action .tapmark {
+    position: absolute; inset: -6px; border-radius: 50%;
+    border: 2px solid rgba(240,230,200,.95);
+    box-shadow: 0 0 26px rgba(240,230,200,.7);
+    opacity: 0; transform: scale(.55);
+    animation: tapburst .8s cubic-bezier(.2,.7,.3,1) forwards;
+  }
+  @keyframes tapburst {
+    0% { opacity: .95; transform: scale(.55); }
+    100% { opacity: 0; transform: scale(1.9); }
+  }
     position: absolute; inset: 0; border-radius: 50%;
     border: 1px solid rgba(212,175,55,.45);
     animation: ripple 3.6s ease-out infinite;
@@ -143,7 +153,7 @@
         <span class="ripple r2"></span>
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5h5L9.5 22 19 10h-5.5L13 2z"/></svg>
       </span>
-      <span class="label" data-i18n="actButton">ACT</span>
+      <span class="label" data-i18n="actButton">GIVE</span>
     </button>
     <button class="action" id="receive">
       <span class="ring">
@@ -175,6 +185,6 @@
 </div>
 
 <script type="importmap">{ "imports": { "three": "./js/three.module.min.js" } }</script>
-<script type="module" src="./js/main.js?v=38"></script>
+<script type="module" src="./js/main.js?v=39"></script>
 </body>
 </html>

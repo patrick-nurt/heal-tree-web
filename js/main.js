@@ -20,7 +20,7 @@ const HEADERS = {
 // ─── i18n (from lib/l10n/*.arb) ──────────────────────────────────────────────
 const STRINGS = {
   en: {
-    actButton: 'ACT', receiveButton: 'RECEIVE',
+    actButton: 'GIVE', receiveButton: 'RECEIVE',
     actsOfKindness: 'ACTS OF KINDNESS', global24h: '24 HOURS · GLOBAL',
     about: 'About', back: '← BACK', privacyPolicy: 'Privacy Policy',
     aboutTitle: 'The Heal In Tree',
@@ -40,7 +40,7 @@ const STRINGS = {
     ],
   },
   es: {
-    actButton: 'ACTUAR', receiveButton: 'RECIBIR',
+    actButton: 'DAR', receiveButton: 'RECIBIR',
     actsOfKindness: 'ACTOS DE BONDAD', global24h: '24 HORAS · GLOBAL',
     about: 'Acerca de', back: '← ATRÁS', privacyPolicy: 'Política de Privacidad',
     aboutTitle: 'The Heal In Tree',
@@ -213,11 +213,18 @@ haze.scale.setScalar(2.35);
 haze.renderOrder = 3; // above ghost beams, below crisp beams
 world.add(haze);
 
-// The Golden Thread — the brief's unbroken filament circling the earth;
-// sweeps independently of the globe's spin.
 // The Heal In Tree signature: ONE delicate golden thread circling the earth
 // with a soft light pulse traveling it — the "invisible golden thread" made
 // visible. Stationary globe; the thread alone carries the ambient motion.
+const THREAD_GLOW = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grad.addColorStop(0, 'rgba(255,220,140,1)'); grad.addColorStop(0.55, 'rgba(212,175,55,.5)'); grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace;
+  return t;
+})();
 const threads = new THREE.Group();
 const sigTorus = new THREE.Mesh(
   new THREE.TorusGeometry(1.12, 0.0055, 8, 160),
@@ -230,7 +237,7 @@ const sigTraveler = (() => {
   const holder = new THREE.Group();
   holder.rotation.set(0.52, 0, 0.28);
   const node = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: SOFT, color: GOLD_LIGHT, transparent: true, opacity: 0.9,
+    map: THREAD_GLOW, color: GOLD_LIGHT, transparent: true, opacity: 0.9,
     blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   }));
   node.scale.setScalar(0.14);
@@ -588,6 +595,11 @@ async function pollCounter() {
 let DEMO_STYLE = null;
 
 async function onAct() {
+  const btn = document.getElementById('act');
+  const mark = document.createElement('span');
+  mark.className = 'tapmark';
+  btn.querySelector('.ring').appendChild(mark);
+  mark.addEventListener('animationend', () => mark.remove());
   vibrate([400, 400, 200, 400, 400]); // ≈2s firm triple-pulse — brief parity (§4)
   const continent = continentOf(userCountry);
   // Brief §2: destination anonymous and RANDOM — a random stranger's country,
@@ -601,6 +613,11 @@ async function onAct() {
 }
 
 async function onReceive() {
+  const btn = document.getElementById('receive');
+  const mark = document.createElement('span');
+  mark.className = 'tapmark';
+  btn.querySelector('.ring').appendChild(mark);
+  mark.addEventListener('animationend', () => mark.remove());
   let signal = null;
   try { signal = await api('/rpc/receive_signal', { p_receiver_country: userCountry, p_continent: continentOf(userCountry) }); }
   catch { /* offline */ }
