@@ -281,11 +281,10 @@ function mulberry(seed) {
 function depth(i) { return DEPTH_MIN + DEPTH_SPAN * ((i / BEAM_SEGS) - 0.5) * 0; }
 const DEPTH_MIN = 0.001, DEPTH_SPAN = 0;
 // ─── Beams ───────────────────────────────────────────────────────────────────
-// All beam geometry lives in the near-camera plane (z ≈ 0.05) so the screen
-// shape never distorts. "Behind the earth" is a render-order sandwich:
-//   planet (opaque) → ghost halo layer (dim + widened, under atmosphere)
-//   → atmosphere sprites → crisp mid/core layers (fade out passing behind)
-//   → head, endpoint rings, sparks
+// Light ribbons riding the rotation, coplanar near the camera (no distortion).
+// Far side = a DISTINCT GHOST: one soft wide glow blob hovering over the
+// behind-earth portion — clearly not a front arc; crisp layers simply end at
+// the limb.
 const beams = [];
 const bursts = [];
 const pulseTex = glowTexture('rgba(255,240,200,1)', 'rgba(212,175,55,.6)');
@@ -313,7 +312,6 @@ const ringSoftTex = (() => {
 })();
 const BEAM_SEGS = 44;
 const BEAM_MS = 1800;
-const GHOST = 0.06;  // brightness of far-side portions (whisper through)
 const Z_BEAM = 0.05;
 
 function beamStrip(color, w0, b0, order) {
@@ -351,8 +349,7 @@ function glowSprite(map, color, opacity, order) {
 function fireBeam(from, to, { receive = false } = {}) {
   const color = receive ? GOLD_LIGHT : GOLD;
   const group = new THREE.Group();
-  const halo = beamStrip(color, 0.036, 0.14, 2.5);   // ghost layer (under haze)
-  const mid = beamStrip(color, 0.018, 0.40, 5);      // crisp (crisp layers paint above haze @3)
+  const mid = beamStrip(color, 0.018, 0.40, 5);
   const core = beamStrip(color, 0.004, 1.0, 5);
   const head = glowSprite(pulseTex, color, 1, 6);
   const origin = glowSprite(ringSoftTex, color, 0, 6);
@@ -367,18 +364,20 @@ function fireBeam(from, to, { receive = false } = {}) {
   }));
   sparks.frustumCulled = false;
   sparks.renderOrder = 6;
-  group.add(halo, mid, core, head, origin, dest, sparks);
-  group.renderOrder = 5;
+  group.add(mid, core, head, origin, dest, sparks);
   scene.add(group);
+  const ghost = glowSprite(pulseTex, color, 0, 2.5); // under atmosphere (order 3)
+  ghost.scale.setScalar(2.2);
+  scene.add(ghost);
   beams.push({
-    from, to, group, halo, mid, core, head, origin, dest, sparks,
+    from, to, group, ghost, mid, core, head, origin, dest, sparks,
     offsets: Array.from({ length: N }, () => Math.random()),
     receive, color, start: performance.now(), durationMs: BEAM_MS,
   });
 }
 
-// Camera-plane positions (orthographic; beam stays coplanar to avoid any
-// perspective distortion). Far-side points keep their true in-disc x,y.
+// Camera-plane positions (orthographic). Far-side points keep their true
+// in-disc x,y — the ghost blob + layer visibility do the "behind" work.
 function projectGeo(lat, lon, centerLon, r = 1.005) {
   const lam = (lon - centerLon) * Math.PI / 180;
   const phi = lat * Math.PI / 180;
@@ -419,7 +418,7 @@ function beamGeo(b, centerLon) {
     v.applyAxisAngle(new THREE.Vector3(0, 1, 0), world.rotation.y);
     const z = v.z; // −1 … +1: hemisphere depth
     const k = Math.max(0, Math.min(1, (z + 0.15) / 0.45)); // 0 far … 1 near
-    br.push(k * k * (3 - 2 * k));
+    br.push(k * k * (3 - 2 * k)); // pure visibility, near→1, far→0
   }
   return { pts, br, a, c };
 }
@@ -433,28 +432,21 @@ function updateBeams(now) {
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
     const { pts, br, a, c } = beamGeo(b, centerLon);
     const base = new THREE.Color(b.color);
-    let farSum = 0, farCount = 0, gx = 0, gy = 0;
+
+    // ── GHOST: one soft wide glow blob over the behind-earth portion ──
+    let fCount = 0, fSum = 0, gx = 0, gy = 0;
     for (let s = 0; s <= BEAM_SEGS; s++) {
-      if (br[s] < 0.35) {
-        farSum += (1 - br[s]);
-        farCount++;
-        gx += pts[s].x;
-        gy += pts[s].y;
-      }
+      if (br[s] < 0.35) { fCount++; fSum += (1 - br[s]); gx += pts[s].x; gy += pts[s].y; }
     }
-    const farSide = farCount > 3;
-    if (farSide) {
-      b.ghost.position.set(gx / farCount, gy / farCount, Z_BEAM - 0.01);
-      const gStr = Math.min((farSum / farCount) * 1.6, 1) * 0.10 * env;   // faint
-      b.ghost.material.opacity = gStr;
+    if (fCount > 2) {
+      b.ghost.position.set(gx / fCount, gy / fCount, Z_BEAM - 0.01);
+      b.ghost.material.opacity = 0.14 * Math.min((fSum / fCount) * 1.8, 1) * env;
     } else {
       b.ghost.material.opacity = 0;
     }
-    for (const strip of [b.mid, b.core]) {
 
-    for (const strip of [b.halo, b.mid, b.core]) {
-      const { w0, b0 } = strip.userData;
-      const isGhost = strip === b.halo;
+    // ── crisp layers: visible only on the near side, fading at the limb ──
+    for (const strip of [b.mid, b.core]) {
       const pos = strip.geometry.attributes.position;
       const col = strip.geometry.attributes.color;
       for (let s = 0; s <= BEAM_SEGS; s++) {
@@ -468,42 +460,35 @@ function updateBeams(now) {
         const off = Math.sin(Math.PI * t) * 0.009              // gentle energy wave
           * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
         const vis = sstep(0.30, 0.55, br[s]);                  // 0 behind … 1 near
-        let w, lum;
-        if (isGhost) {
-          w = w0 * cap * (1 + 0.35 * (1 - br[s]));             // slightly softened behind
-          lum = b0 * (GHOST + (1 - GHOST) * br[s]);
-        } else {
-          w = w0 * cap * vis;                                  // crisp fades out behind
-          lum = b0;
-        }
-        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny, w, Z_BEAM);
+        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny,
+          strip.userData.w0 * cap * vis, Z_BEAM);
+        const lum = strip.userData.b0;
         for (const o of [s * 6, s * 6 + 3]) {
           col.array[o] = base.r * lum; col.array[o + 1] = base.g * lum; col.array[o + 2] = base.b * lum;
         }
-        brSum += br[s];
       }
       pos.needsUpdate = true;
       col.needsUpdate = true;
       strip.material.opacity = env;
     }
 
-    // Head rides the arc; behind the globe it dims to a whisper.
+    // Head rides the arc — a whisper behind the planet.
     const hi = Math.round(p * BEAM_SEGS);
     b.head.position.set(pts[hi].x, pts[hi].y, Z_BEAM + 0.01);
-    b.head.scale.setScalar(Math.max((0.11 - 0.04 * (1 - br[hi])) * env * (0.3 + 0.7 * br[hi]), 0.0001));
-    b.head.material.opacity = env * (0.05 + 0.95 * br[hi]);
+    b.head.material.opacity = env * (0.08 + 0.92 * br[hi]);
+    b.head.scale.setScalar(Math.max((0.11 - 0.04 * (1 - br[hi])) * env, 0.0001));
 
     // Origin / destination rings ride their anchors, ghosted behind.
     b.origin.position.set(a.x, a.y, Z_BEAM + 0.005);
     const oIn = Math.min(p / 0.10, 1);
     b.origin.scale.setScalar(Math.max(0.07 + 0.20 * oIn, 0.0001) * (0.55 + 0.45 * br[0]));
-    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (0.06 + 0.94 * br[0]);
+    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (0.10 + 0.90 * br[0]);
     b.dest.position.set(c.x, c.y, Z_BEAM + 0.005);
     const dIn = Math.min(Math.max((p - 0.70) / 0.25, 0), 1);
     b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001) * (0.55 + 0.45 * br[BEAM_SEGS]));
-    b.dest.material.opacity = dIn * env * (0.06 + 0.94 * br[BEAM_SEGS]);
+    b.dest.material.opacity = dIn * env * (0.10 + 0.90 * br[BEAM_SEGS]);
 
-    // Sparks flow through the beam; dim as a group by the mean depth.
+    // Sparks flow through the beam; dim by the path's mean visibility.
     const sp = b.sparks.geometry.attributes.position;
     const flow = (now - b.start) / 650;
     for (let k = 0; k < b.offsets.length; k++) {
@@ -513,8 +498,10 @@ function updateBeams(now) {
       sp.setXYZ(k, p0.x + (p1.x - p0.x) * fr, p0.y + (p1.y - p0.y) * fr, Z_BEAM + 0.005);
     }
     sp.needsUpdate = true;
-    const meanBr = br.reduce((sum, v) => sum + v, 0) / (BEAM_SEGS + 1);
-    b.sparks.material.opacity = 0.85 * env * (0.08 + 0.92 * meanBr);
+    let meanBr = 0;
+    for (const v of br) meanBr += v;
+    meanBr /= BEAM_SEGS + 1;
+    b.sparks.material.opacity = 0.85 * env * (0.10 + 0.90 * meanBr);
 
     if (p >= 1) {
       if (br[BEAM_SEGS] > 0.5) {
@@ -528,10 +515,10 @@ function updateBeams(now) {
         bursts.push({ ring, start: now });
       }
       scene.remove(b.group);
+      scene.remove(b.ghost);
       for (const st of [b.mid, b.core]) { st.geometry.dispose(); st.material.dispose(); }
-      b.ghost.material.dispose();
       b.sparks.geometry.dispose(); b.sparks.material.dispose();
-      for (const k of ["head", "origin", "dest"]) b[k].material.dispose();
+      for (const k of ["head", "origin", "dest", "ghost"]) b[k].material.dispose();
       beams.splice(i, 1);
     }
   }
@@ -543,7 +530,6 @@ function updateBeams(now) {
     if (t >= 1) { scene.remove(bu.ring); bu.ring.material.dispose(); bursts.splice(i, 1); }
   }
 }
-
 // ─── Interaction / backend ───────────────────────────────────────────────────
 const $count = document.getElementById('count');
 const $toast = document.getElementById('toast');
