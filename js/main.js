@@ -262,8 +262,9 @@ function mulberry(seed) {
 }
 
 // ─── Beams ───────────────────────────────────────────────────────────────────
-// Styles: A ribbon (current), B comet, C particle stream, D energy arc,
-// E arrival burst. Compare live with ?demo — the picker fires each style.
+// Geo-anchored: endpoints are re-projected every frame so beams ride the
+// rotation, always visible (far side clamps to the limb). Origin blooms in,
+// destination blooms as the pulse arrives, ring burst on landing.
 const beams = [];
 const bursts = [];
 const pulseTex = glowTexture('rgba(255,240,200,1)', 'rgba(212,175,55,.6)');
@@ -277,11 +278,9 @@ const ringTex = (() => {
   return t;
 })();
 const BEAM_SEGS = 44;
+const BEAM_MS = 1800;
 
-// Ribbon strip. width/brightness: number or fn(s01 along the beam).
 function beamStrip(color, width, brightness) {
-  const wOf = typeof width === "function" ? width : () => width;
-  const bOf = typeof brightness === "function" ? brightness : () => brightness;
   const g = new THREE.BufferGeometry();
   const pos = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
   const col = new Float32Array((BEAM_SEGS + 1) * 2 * 3);
@@ -294,9 +293,9 @@ function beamStrip(color, width, brightness) {
   }
   g.setIndex(idx);
   const c = new THREE.Color(color);
-  for (let sIdx = 0; sIdx <= BEAM_SEGS; sIdx++) {
-    const t = sIdx / BEAM_SEGS, br = bOf(t);
-    for (const o of [sIdx * 6, sIdx * 6 + 3]) {
+  for (let s = 0; s <= BEAM_SEGS; s++) {
+    const br = brightness(s / BEAM_SEGS);
+    for (const o of [s * 6, s * 6 + 3]) {
       col[o] = c.r * br; col[o + 1] = c.g * br; col[o + 2] = c.b * br;
     }
   }
@@ -310,63 +309,33 @@ function beamStrip(color, width, brightness) {
   return mesh;
 }
 
-const BEAM_STYLES = {
-  A: { label: "Ribbon (current)" },
-  B: { label: "Comet" },
-  C: { label: "Particle stream" },
-  D: { label: "Energy arc" },
-  E: { label: "Arrival burst" },
-};
+function glowSprite(color, opacity) {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: pulseTex, color, transparent: true, opacity,
+    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+  }));
+  sp.renderOrder = 6;
+  return sp;
+}
 
-function fireBeam(from, to, { receive = false, style = "A" } = {}) {
-  // Freeze geometry to the rotation at fire time — fixed to the spot.
-  const centerLon0 = -(world.rotation.y * 180 / Math.PI + 90);
+function fireBeam(from, to, { receive = false } = {}) {
   const color = receive ? GOLD_LIGHT : GOLD;
   const group = new THREE.Group();
-  const b = {
-    from, to, centerLon0, style, color, receive,
-    group, start: performance.now(), durationMs: 2500,
-  };
-  if (style === "C") {
-    const N = 24;
-    const pos = new Float32Array(N * 3);
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
-    const pts = new THREE.Points(g, new THREE.PointsMaterial({
-      size: 0.07, map: pulseTex, color, transparent: true,
-      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
-    }));
-    pts.frustumCulled = false; pts.renderOrder = 5;
-    group.add(pts);
-    b.particles = pts;
-    b.offsets = Array.from({ length: N }, (_, i) => (i / N + Math.random() * 0.02) % 1);
-  } else {
-    const conf = {
-      A: { w: 0.014, br: () => 1 },
-      B: { w: (t) => 0.003 + 0.024 * Math.pow(t, 1.8), br: (t) => 0.22 + 0.78 * Math.pow(t, 2.2) },
-      D: { w: 0.010, br: () => 1 },
-      E: { w: 0.013, br: (t) => 0.55 + 0.45 * t },
-    }[style] || { w: 0.014, br: () => 1 };
-    b.core = beamStrip(color, conf.w, conf.br);
-    if (style !== "B") {
-      b.glow = beamStrip(color, typeof conf.w === "number" ? conf.w * 3.4 : (t) => conf.w(t) * 2.6 + 0.02, (t) => 0.3 * (typeof conf.br === "function" ? conf.br(t) : 1));
-      group.add(b.glow);
-    }
-    group.add(b.core);
-    if (style !== "C") {
-      b.head = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: pulseTex, color, transparent: true, blending: THREE.AdditiveBlending,
-        depthWrite: false, depthTest: false, opacity: style === "B" ? 0.85 : 1,
-      }));
-      head_renderOrder_set(b.head);
-      group.add(b.head);
-    }
-  }
+  const core = beamStrip(color, 0.014, (t) => 0.55 + 0.45 * t);
+  const glow = beamStrip(color, 0.05, () => 0.32);
+  const head = glowSprite(color, 1);
+  const origin = glowSprite(color, 0);
+  const dest = glowSprite(color, 0);
+  group.add(glow, core, head, origin, dest);
   scene.add(group);
-  beams.push(b);
+  beams.push({
+    from, to, group, core, glow, head, origin, dest,
+    receive, color, start: performance.now(), durationMs: BEAM_MS,
+  });
 }
-function head_renderOrder_set(sp) { sp.renderOrder = 6; }
 
+// Orthographic projection with limb clamp (Flutter PlanetProjection parity):
+// far-side points ride the limb silhouette instead of disappearing.
 function projectGeo(lat, lon, centerLon, r = 1.005) {
   const lam = (lon - centerLon) * Math.PI / 180;
   const phi = lat * Math.PI / 180;
@@ -391,7 +360,7 @@ function setStrip(attr, i6, x, y, nx, ny, w) {
 function beamPoints(b, centerLon) {
   const a = projectGeo(b.from[0], b.from[1], centerLon);
   const c = projectGeo(b.to[0], b.to[1], centerLon);
-  const lift = 1 + 0.18 + geoUnit(b.from[0], b.from[1]).angleTo(geoUnit(b.to[0], b.to[1])) * 0.10;
+  const lift = 1 + 0.16 + geoUnit(b.from[0], b.from[1]).angleTo(geoUnit(b.to[0], b.to[1])) * 0.09;
   const mid = new THREE.Vector2((a.x + c.x) / 2, (a.y + c.y) / 2);
   if (mid.length() < 1e-4) mid.set(0, lift); else mid.multiplyScalar(lift);
   const pts = [];
@@ -402,86 +371,70 @@ function beamPoints(b, centerLon) {
       inv * inv * a.y + 2 * inv * t * mid.y + t * t * c.y,
     ));
   }
-  return pts;
+  return { pts, a, c };
 }
-const jit = (s, now) => (Math.sin(s * 21.7 + now * 0.021) + Math.sin(s * 7.3 + now * 0.043)) * 0.012;
 
-function updateBeams(now, centerLon) {
+function updateBeams(now) {
+  // Beams ride the live rotation: facing longitude derives from the globe.
+  const centerLon = -(world.rotation.y * 180 / Math.PI + 90);
   for (let i = beams.length - 1; i >= 0; i--) {
     const b = beams[i];
     const p = Math.min((now - b.start) / b.durationMs, 1);
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
-    let pts = beamPoints(b, b.centerLon0);
-    if (b.style === "D") {
-      const wob = pts.map((pt, s) => {
-        const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
-        const dx = next.x - prev.x, dy = next.y - prev.y, len = Math.hypot(dx, dy) || 1e-4;
-        const off = jit(s, now) * (0.35 + 0.65 * Math.sin(Math.PI * s / BEAM_SEGS)) * env;
-        return new THREE.Vector2(pt.x + (-dy / len) * off, pt.y + (dx / len) * off);
-      });
-      pts = wob;
+    const { pts, a, c } = beamPoints(b, centerLon);
+
+    const pos0 = b.core.geometry.attributes.position;
+    const pos1 = b.glow.geometry.attributes.position;
+    for (let s = 0; s <= BEAM_SEGS; s++) {
+      const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
+      const dx = next.x - prev.x, dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1e-4;
+      const nx = -dy / len, ny = dx / len;
+      setStrip(pos0, s * 6, pts[s].x, pts[s].y, nx, ny, 0.014);
+      setStrip(pos1, s * 6, pts[s].x, pts[s].y, nx, ny, 0.05);
     }
-    const fill = (strip, wFn) => {
-      const pos = strip.geometry.attributes.position;
-      for (let s = 0; s <= BEAM_SEGS; s++) {
-        const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
-        const dx = next.x - prev.x, dy = next.y - prev.y;
-        const len = Math.hypot(dx, dy) || 1e-4;
-        const nx = -dy / len, ny = dx / len;
-        const w = typeof wFn === "function" ? wFn(s / BEAM_SEGS) : wFn;
-        setStrip(pos, s * 6, pts[s].x, pts[s].y, nx, ny, w);
-      }
-      pos.needsUpdate = true;
-    };
-    if (b.style === "C") {
-      const pos = b.particles.geometry.attributes.position;
-      const flow = (now - b.start) / 900;
-      for (let k = 0; k < b.offsets.length; k++) {
-        const t = (b.offsets[k] + flow) % 1;
-        const s = t * BEAM_SEGS, s0 = Math.floor(s), fr = s - s0;
-        const pt = pts[Math.min(s0, BEAM_SEGS)], nx2 = pts[Math.min(s0 + 1, BEAM_SEGS)];
-        pos.setXYZ(k, pt.x + (nx2.x - pt.x) * fr, pt.y + (nx2.y - pt.y) * fr, 0.05);
-      }
-      pos.needsUpdate = true;
-      b.particles.material.opacity = env;
-    } else {
-      const wBase = { A: 0.014, B: null, D: 0.010, E: 0.013 }[b.style];
-      if (b.core) fill(b.core, wBase ?? ((t) => 0.003 + 0.024 * Math.pow(t, 1.8)));
-      if (b.glow) fill(b.glow, wBase == null ? ((t) => (0.003 + 0.024 * Math.pow(t, 1.8)) * 2.6 + 0.02) : wBase * 3.4);
-      if (b.head) {
-        b.head.position.set(pts[Math.round(p * BEAM_SEGS)].x, pts[Math.round(p * BEAM_SEGS)].y, 0.06);
-        const hs = (0.13 + 0.06 * Math.sin(p * Math.PI)) * env * (b.style === "B" ? 0.7 : 1);
-        b.head.scale.setScalar(Math.max(hs, 0.0001));
-        b.head.material.opacity = env;
-      }
-      b.core.material.opacity = env;
-      if (b.glow) b.glow.material.opacity = (b.style === "D" ? 0.32 * (0.7 + 0.3 * Math.sin(now * 0.04)) : 0.32) * env;
-    }
+    pos0.needsUpdate = true;
+    pos1.needsUpdate = true;
+    b.core.material.opacity = env;
+    b.glow.material.opacity = 0.32 * env;
+
+    // Head rides the arc.
+    b.head.position.set(pts[Math.round(p * BEAM_SEGS)].x, pts[Math.round(p * BEAM_SEGS)].y, 0.06);
+    b.head.scale.setScalar(Math.max((0.13 + 0.05 * Math.sin(p * Math.PI)) * env, 0.0001));
+    b.head.material.opacity = env;
+
+    // Origin bloom: swells in during launch, rides its anchor, fades last.
+    b.origin.position.set(a.x, a.y, 0.055);
+    const oIn = Math.min(p / 0.10, 1);
+    b.origin.scale.setScalar(Math.max(0.06 + 0.16 * oIn, 0.0001));
+    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env;
+
+    // Destination bloom: grows as the pulse approaches, holds while lit.
+    b.dest.position.set(c.x, c.y, 0.055);
+    const dIn = Math.min(Math.max((p - 0.70) / 0.25, 0), 1);
+    b.dest.scale.setScalar(Math.max(0.05 + 0.30 * dIn, 0.0001));
+    b.dest.material.opacity = dIn * env;
+
     if (p >= 1) {
-      if (b.style === "E") {
-        const end = pts[BEAM_SEGS];
-        const ring = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: ringTex, color: b.color, transparent: true,
-          blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, opacity: 0.9,
-        }));
-        ring.position.set(end.x, end.y, 0.06);
-        ring.renderOrder = 7;
-        scene.add(ring);
-        bursts.push({ ring, start: now });
-      }
+      // Arrival ring burst at the destination.
+      const ring = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: ringTex, color: b.color, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, opacity: 0.9,
+      }));
+      ring.position.set(c.x, c.y, 0.06);
+      ring.renderOrder = 7;
+      scene.add(ring);
+      bursts.push({ ring, start: now });
       scene.remove(b.group);
-      for (const k of ["core", "glow"]) {
-        if (b[k]) { b[k].geometry.dispose(); b[k].material.dispose(); }
-      }
-      if (b.particles) { b.particles.geometry.dispose(); b.particles.material.dispose(); }
-      if (b.head) b.head.material.dispose();
+      for (const k of ["core", "glow"]) { b[k].geometry.dispose(); b[k].material.dispose(); }
+      for (const k of ["head", "origin", "dest"]) b[k].material.dispose();
       beams.splice(i, 1);
     }
   }
   for (let i = bursts.length - 1; i >= 0; i--) {
     const bu = bursts[i];
     const t = Math.min((now - bu.start) / 550, 1);
-    bu.ring.scale.setScalar(0.06 + t * 0.42);
+    bu.ring.scale.setScalar(0.06 + t * 0.40);
     bu.ring.material.opacity = 0.9 * (1 - t);
     if (t >= 1) { scene.remove(bu.ring); bu.ring.material.dispose(); bursts.splice(i, 1); }
   }
@@ -531,7 +484,7 @@ let DEMO_STYLE = null;
 async function onAct() {
   vibrate([60, 60, 40, 60, 60]);
   const continent = continentOf(userCountry);
-  fireBeam(anchorOf(userCountry), FORESTS[continent], { style: DEMO_STYLE || "A" });
+  fireBeam(anchorOf(userCountry), FORESTS[continent]);
   count += 1; $count.textContent = count; // optimistic; poll corrects
   try { await api('/rpc/create_signal', { p_sender_country: userCountry, p_continent: continent }); }
   catch { /* offline: visual only */ }
@@ -543,7 +496,7 @@ async function onReceive() {
   catch { /* offline */ }
   if (signal) {
     vibrate([30, 60, 30, 50, 30, 40, 40, 60, 30]);
-    fireBeam(FORESTS[signal.continent] ?? FORESTS[continentOf(userCountry)], anchorOf(userCountry), { receive: true, style: DEMO_STYLE || "A" });
+    fireBeam(FORESTS[signal.continent] ?? FORESTS[continentOf(userCountry)], anchorOf(userCountry), { receive: true });
   } else {
     vibrate(20);
     showToast(L.noSignalsAvailable);
@@ -561,34 +514,6 @@ document.getElementById('openPrivacy').addEventListener('click', () => privacySh
 aboutSheet.querySelector('.back').addEventListener('click', () => aboutSheet.classList.remove('open'));
 privacySheet.querySelector('.back').addEventListener('click', () => privacySheet.classList.remove('open'));
 
-
-// ─── Beam style demo (only with ?demo) ───────────────────────────────────────
-if (new URLSearchParams(location.search).has("demo")) {
-  const panel = document.createElement("div");
-  panel.id = "beamdemo";
-  panel.innerHTML = Object.entries(BEAM_STYLES)
-    .map(([k, v]) => `<button data-style="${k}">${k} · ${v.label}</button>`)
-    .join("");
-  document.body.appendChild(panel);
-  const randAnchor = () => {
-    const keys = Object.keys(COUNTRY_ANCHORS).filter(k => k !== "XX");
-    return keys[Math.floor(Math.random() * keys.length)];
-  };
-  const fireDemo = () => {
-    const a = randAnchor();
-    let b = randAnchor();
-    while (b === a) b = randAnchor();
-    fireBeam(COUNTRY_ANCHORS[a], COUNTRY_ANCHORS[b], { style: DEMO_STYLE || "A" });
-  };
-  panel.addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (!btn) return;
-    DEMO_STYLE = btn.dataset.style;
-    panel.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === btn));
-    fireDemo();
-  });
-  setInterval(() => { if (DEMO_STYLE) fireDemo(); }, 3500);
-}
 
 // ─── Frame loop ──────────────────────────────────────────────────────────────
 let last = performance.now();

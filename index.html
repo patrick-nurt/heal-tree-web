@@ -102,16 +102,6 @@
     box-shadow: 0 0 18px rgba(212,175,55,.8); animation: pulse 1.1s ease-in-out infinite;
   }
   @keyframes pulse { 0%,100% { transform: scale(.6); opacity: .5; } 50% { transform: scale(1.2); opacity: 1; } }
-  #beamdemo {
-    position: fixed; right: 12px; bottom: 150px; z-index: 6;
-    display: flex; flex-direction: column; gap: 6px;
-  }
-  #beamdemo button {
-    background: rgba(20,20,20,.85); border: 1px solid rgba(212,175,55,.5);
-    color: var(--gold); font-family: inherit; font-size: 12px;
-    padding: 5px 10px; cursor: pointer; letter-spacing: .04em; text-align: left;
-  }
-  #beamdemo button.on { background: rgba(212,175,55,.25); border-color: var(--gold); }
   #fallback {
     position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
     text-align: center; padding: 30px; color: var(--text-dim); font-size: 18px; line-height: 1.6;
@@ -164,6 +154,6 @@
 </div>
 
 <script type="importmap">{ "imports": { "three": "./js/three.module.min.js" } }</script>
-<script type="module" src="./js/main.js?v=10"></script>
+<script type="module" src="./js/main.js?v=12"></script>
 </body>
 </html>
