@@ -226,26 +226,43 @@ const THREAD_GLOW = (() => {
   return t;
 })();
 const threads = new THREE.Group();
-const sigTorus = new THREE.Mesh(
-  new THREE.TorusGeometry(1.12, 0.0055, 8, 160),
-  new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.5,
-    blending: THREE.AdditiveBlending, depthWrite: false }),
-);
-sigTorus.rotation.set(0.52, 0, 0.28);
-threads.add(sigTorus);
-const sigTraveler = (() => {
-  const holder = new THREE.Group();
-  holder.rotation.set(0.52, 0, 0.28);
-  const node = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: THREAD_GLOW, color: GOLD_LIGHT, transparent: true, opacity: 0.9,
-    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
-  }));
-  node.scale.setScalar(0.14);
-  node.position.set(1.12, 0, 0);
-  holder.add(node);
-  threads.add(holder);
-  return { holder, node };
-})();
+// Selina asked for "more than one circle and ball moving" — three crossing
+// filaments, five travelling lights, slightly different speeds each.
+const THREAD_SPECS = [
+  { tilt: 0.52, spin: 0.28, radius: 1.12, alpha: 0.48, nodes: 2 },
+  { tilt: -0.38, spin: -0.62, radius: 1.06, alpha: 0.36, nodes: 2 },
+  { tilt: 0.92, spin: 1.15, radius: 1.02, alpha: 0.30, nodes: 1 },
+];
+const sigTravelers = [];
+for (const [ti, spec] of THREAD_SPECS.entries()) {
+  const torus = new THREE.Mesh(
+    new THREE.TorusGeometry(spec.radius, ti === 0 ? 0.0055 : 0.0045, 8, 160),
+    new THREE.MeshBasicMaterial({
+      color: GOLD, transparent: true, opacity: spec.alpha,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }),
+  );
+  torus.rotation.set(spec.tilt, 0, spec.spin);
+  threads.add(torus);
+
+  for (let n = 0; n < spec.nodes; n++) {
+    const holder = new THREE.Group();
+    holder.rotation.set(spec.tilt, 0, spec.spin);
+    const node = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: THREAD_GLOW, color: GOLD_LIGHT, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+    }));
+    node.scale.setScalar(ti === 0 ? 0.14 : 0.11);
+    node.position.set(spec.radius, 0, 0);
+    holder.add(node);
+    threads.add(holder);
+    sigTravelers.push({
+      holder, node,
+      phase: n / spec.nodes + ti * 0.17,
+      speed: 1 + ti * 0.18,
+    });
+  }
+}
 scene.add(threads);
 const SIG_PERIOD = 9000; // ms per orbit — unhurried, elegant
 
@@ -720,8 +737,11 @@ function frame(now) {
   const br = 0.8 + 0.2 * Math.sin(atmoBreathe.phase * Math.PI * 2); // 0.6 … 1.0
   atmo.material.opacity = 0.8 * br;
   haze.material.opacity = 0.35 * br;
-  sigTraveler.holder.rotation.z = (now % SIG_PERIOD) / SIG_PERIOD * Math.PI * 2;
-  sigTraveler.node.material.opacity = 0.75 + 0.25 * Math.sin(now * 0.004);
+  for (const t of sigTravelers) {
+    const phase = ((now % SIG_PERIOD) / SIG_PERIOD) * t.speed + t.phase;
+    t.holder.rotation.z = (phase % 1) * Math.PI * 2;
+    t.node.material.opacity = 0.7 + 0.3 * Math.sin(phase * Math.PI * 6);
+  }
 
   // Particle drift.
   const pos = specks.points.geometry.attributes.position;
