@@ -27,6 +27,10 @@
 
   /* ── HUD ─────────────────────────────────────────────── */
   #hud { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column; }
+  .headline { text-align: center; padding-top: calc(10px + env(safe-area-inset-top)); }
+  .headline .brand { font-size: 30px; font-weight: 500; color: var(--gold); letter-spacing: .06em; text-shadow: 0 0 18px rgba(212,175,55,.4); }
+  .headline .line { font-size: 15.5px; color: var(--text-dim); font-style: italic; margin-top: 3px; }
+  .counter { padding-top: calc(6px + env(safe-area-inset-top)); }
   .counter { position: absolute; top: calc(18px + env(safe-area-inset-top)); left: 0; right: 0; text-align: center; }
   #count { font-size: 58px; font-weight: 400; color: var(--gold); line-height: 1.05; text-shadow: 0 0 24px rgba(212,175,55,.35); }
   .counter .label { font-size: 13px; letter-spacing: .42em; color: var(--gold); opacity: .85; margin-top: 2px; }
@@ -139,6 +143,10 @@
 <canvas id="scene"></canvas>
 
 <div id="hud">
+  <div class="headline">
+    <div class="brand">The Heal-In Tree</div>
+    <div class="line">A place where kindness is our collective Superpower.</div>
+  </div>
   <div class="counter">
     <div id="count">0</div>
     <div class="label" data-i18n="actsOfKindness">ACTS OF KINDNESS</div>
@@ -185,6 +193,6 @@
 </div>
 
 <script type="importmap">{ "imports": { "three": "./js/three.module.min.js" } }</script>
-<script type="module" src="./js/main.js?v=41"></script>
+<script type="module" src="./js/main.js?v=42"></script>
 </body>
 </html>
