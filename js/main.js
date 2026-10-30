@@ -406,9 +406,10 @@ function projectGeo(lat, lon, centerLon, r = 1.005) {
   const phi = lat * Math.PI / 180;
   return { x: Math.cos(phi) * Math.sin(lam) * r, y: Math.sin(phi) * r };
 }
-function geoUnit(lat, lon) {
+function geoUnit(lat, lon, out) {
   const lam = lon * Math.PI / 180, phi = lat * Math.PI / 180;
-  return new THREE.Vector3(Math.cos(phi) * Math.sin(lam), Math.sin(phi), Math.cos(phi) * Math.cos(lam));
+  const v = out || new THREE.Vector3();
+  return v.set(Math.cos(phi) * Math.sin(lam), Math.sin(phi), Math.cos(phi) * Math.cos(lam));
 }
 function setStrip(attr, i6, x, y, nx, ny, w, z) {
   attr.array[i6 + 0] = x + nx * w; attr.array[i6 + 1] = y + ny * w; attr.array[i6 + 2] = z;
@@ -416,34 +417,57 @@ function setStrip(attr, i6, x, y, nx, ny, w, z) {
 }
 const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
+// ── Perf: frame-constant tables + scratch buffers (zero allocation per frame) ──
+const CAP = new Float32Array(BEAM_SEGS + 1);       // rounded-cap width envelope
+const WAVE_K = new Float32Array(BEAM_SEGS + 1);    // sin(pi t) for the energy wave
+const SIN = new Float32Array(BEAM_SEGS + 1);
+for (let s = 0; s <= BEAM_SEGS; s++) {
+  const t = s / BEAM_SEGS;
+  CAP[s] = Math.pow(Math.sin(Math.PI * t), 0.7);
+  WAVE_K[s] = Math.sin(Math.PI * t);
+  SIN[s] = Math.sin(t * Math.PI);
+}
+const PTX = new Float32Array(BEAM_SEGS + 1);
+const PTY = new Float32Array(BEAM_SEGS + 1);
+const BR = new Float32Array(BEAM_SEGS + 1);
+const U0 = new THREE.Vector3();
+const U1 = new THREE.Vector3();
+
 function beamGeo(b, centerLon) {
-  const u0 = geoUnit(b.from[0], b.from[1]);
-  const u1 = geoUnit(b.to[0], b.to[1]);
+  const u0 = geoUnit(b.from[0], b.from[1], U0);
+  const u1 = geoUnit(b.to[0], b.to[1], U1);
   const a = projectGeo(b.from[0], b.from[1], centerLon);
   const c = projectGeo(b.to[0], b.to[1], centerLon);
-  const lift = 1 + 0.16 + u0.angleTo(u1) * 0.09;
-  const mid = new THREE.Vector2((a.x + c.x) / 2, (a.y + c.y) / 2);
-  if (mid.length() < 1e-4) mid.set(0, lift); else mid.multiplyScalar(lift);
+  const omega = u0.angleTo(u1);
+  const lift = 1 + 0.16 + omega * 0.09;
+  let mx = (a.x + c.x) / 2, my = (a.y + c.y) / 2;
+  const ml = Math.hypot(mx, my);
+  if (ml < 1e-4) { mx = 0; my = lift; } else { mx *= lift; my *= lift; }
 
-  const omega = u0.angleTo(u1), so = Math.sin(omega);
-  const tmp = new THREE.Vector3();
-  const pts = [], br = [];
+  const so = Math.sin(omega);
+  const rotY = world.rotation.y;
+  const cr = Math.cos(rotY), sr = Math.sin(rotY);
   for (let s = 0; s <= BEAM_SEGS; s++) {
     const t = s / BEAM_SEGS, inv = 1 - t;
-    pts.push(new THREE.Vector2(
-      inv * inv * a.x + 2 * inv * t * mid.x + t * t * c.x,
-      inv * inv * a.y + 2 * inv * t * mid.y + t * t * c.y,
-    ));
-    let v;
-    if (so < 1e-4) v = tmp.copy(u0).lerp(u1, t);
-    else v = tmp.copy(u0).multiplyScalar(Math.sin((1 - t) * omega) / so)
-      .addScaledVector(u1, Math.sin(t * omega) / so);
-    v.applyAxisAngle(new THREE.Vector3(0, 1, 0), world.rotation.y);
-    const z = v.z; // −1 … +1: hemisphere depth
-    const k = Math.max(0, Math.min(1, (z + 0.55) / 0.72)); // wide visible band
-    br.push(k * k * (3 - 2 * k));
+    PTX[s] = inv * inv * a.x + 2 * inv * t * mx + t * t * c.x;
+    PTY[s] = inv * inv * a.y + 2 * inv * t * my + t * t * c.y;
+    // slerp → rotate about Y (inline; was a Vector3 alloc + applyAxisAngle per segment)
+    let vx, vy, vz;
+    if (so < 1e-4) {
+      vx = u0.x + (u1.x - u0.x) * t;
+      vy = u0.y + (u1.y - u0.y) * t;
+      vz = u0.z + (u1.z - u0.z) * t;
+    } else {
+      const w0 = Math.sin((1 - t) * omega) / so, w1 = Math.sin(t * omega) / so;
+      vx = u0.x * w0 + u1.x * w1;
+      vy = u0.y * w0 + u1.y * w1;
+      vz = u0.z * w0 + u1.z * w1;
+    }
+    const z = -vx * sr + vz * cr;             // Y-rotation: only z is needed
+    const k = Math.max(0, Math.min(1, (z + 0.55) / 0.72));
+    BR[s] = k * k * (3 - 2 * k);
   }
-  return { pts, br, a, c };
+  return { a, c };
 }
 
 function updateBeams(now) {
@@ -453,13 +477,14 @@ function updateBeams(now) {
     const b = beams[i];
     const p = Math.min((now - b.start) / b.durationMs, 1);
     const env = Math.min(p / 0.06, 1) * (p > 0.85 ? Math.max(0, (1 - p) / 0.15) : 1);
-    const { pts, br, a, c } = beamGeo(b, centerLon);
-    const base = new THREE.Color(b.color);
+    const { a, c } = beamGeo(b, centerLon);
+    if (!b._baseColor) b._baseColor = new THREE.Color(b.color);
+    const base = b._baseColor;
 
     // ── GHOST: one soft wide glow blob over the behind-earth portion ──
     let fCount = 0, fSum = 0, gx = 0, gy = 0;
     for (let s = 0; s <= BEAM_SEGS; s++) {
-      if (br[s] < 0.35) { fCount++; fSum += (1 - br[s]); gx += pts[s].x; gy += pts[s].y; }
+      if (BR[s] < 0.35) { fCount++; fSum += (1 - BR[s]); gx += PTX[s]; gy += PTY[s]; }
     }
     if (fCount > 2) {
       b.ghost.position.set(gx / fCount, gy / fCount, Z_BEAM - 0.01);
@@ -471,45 +496,53 @@ function updateBeams(now) {
     // ── crisp layers: visible only on the near side, fading at the limb ──
     for (const strip of [b.mid, b.core]) {
       const pos = strip.geometry.attributes.position;
-      const col = strip.geometry.attributes.color;
+      const arr = pos.array;
+      const phase = now * 0.010;
       for (let s = 0; s <= BEAM_SEGS; s++) {
-        const t = s / BEAM_SEGS;
-        const prev = pts[Math.max(s - 1, 0)], next = pts[Math.min(s + 1, BEAM_SEGS)];
-        const dx = next.x - prev.x, dy = next.y - prev.y;
-        const len = Math.hypot(dx, dy) || 1e-4;
+        const sPrev = s > 0 ? s - 1 : 0, sNext = s < BEAM_SEGS ? s + 1 : BEAM_SEGS;
+        const dx = PTX[sNext] - PTX[sPrev], dy = PTY[sNext] - PTY[sPrev];
+        const len = Math.sqrt(dx * dx + dy * dy) || 1e-4;
         const nx = -dy / len, ny = dx / len;
-        const cap = Math.pow(Math.sin(Math.PI * t), 0.7);      // rounded caps
-        const ph = s * 0.24 - now * 0.010;
-        const off = Math.sin(Math.PI * t) * 0.009              // gentle energy wave
-          * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
-        const vis = sstep(0.30, 0.55, br[s]);                  // 0 behind … 1 near
-        setStrip(pos, s * 6, pts[s].x + nx * off, pts[s].y + ny * off, nx, ny,
-          strip.userData.w0 * cap * vis, Z_BEAM);
-        const lum = strip.userData.b0;
-        for (const o of [s * 6, s * 6 + 3]) {
-          col.array[o] = base.r * lum; col.array[o + 1] = base.g * lum; col.array[o + 2] = base.b * lum;
-        }
+        const ph = s * 0.24 - phase;
+        const off = WAVE_K[s] * 0.009 * (Math.sin(ph) + 0.35 * Math.sin(ph * 2.1 + 1.3));
+        const vis = sstep(0.30, 0.55, BR[s]);
+        const w = strip.userData.w0 * CAP[s] * vis;
+        const px = PTX[s] + nx * off, py = PTY[s] + ny * off;
+        const i6 = s * 6;
+        arr[i6] = px + nx * w; arr[i6 + 1] = py + ny * w; arr[i6 + 2] = Z_BEAM;
+        arr[i6 + 3] = px - nx * w; arr[i6 + 4] = py - ny * w; arr[i6 + 5] = Z_BEAM;
       }
       pos.needsUpdate = true;
-      col.needsUpdate = true;
+      if (!strip.userData.colored) {
+        // vertex colors are constant per layer — upload once, not every frame
+        const col = strip.geometry.attributes.color;
+        const lum = strip.userData.b0;
+        for (let s = 0; s <= BEAM_SEGS; s++) {
+          for (const o of [s * 6, s * 6 + 3]) {
+            col.array[o] = base.r * lum; col.array[o + 1] = base.g * lum; col.array[o + 2] = base.b * lum;
+          }
+        }
+        col.needsUpdate = true;
+        strip.userData.colored = true;
+      }
       strip.material.opacity = env;
     }
 
     // Head rides the arc — a whisper behind the planet.
     const hi = Math.round(p * BEAM_SEGS);
-    b.head.position.set(pts[hi].x, pts[hi].y, Z_BEAM + 0.01);
-    b.head.material.opacity = env * (0.08 + 0.92 * br[hi]);
-    b.head.scale.setScalar(Math.max((0.11 - 0.04 * (1 - br[hi])) * env, 0.0001));
+    b.head.position.set(PTX[hi], PTY[hi], Z_BEAM + 0.01);
+    b.head.material.opacity = env * (0.08 + 0.92 * BR[hi]);
+    b.head.scale.setScalar(Math.max((0.11 - 0.04 * (1 - BR[hi])) * env, 0.0001));
 
     // Origin / destination rings ride their anchors, ghosted behind.
     b.origin.position.set(a.x, a.y, Z_BEAM + 0.005);
     const oIn = Math.min(p / 0.10, 1);
-    b.origin.scale.setScalar(Math.max(0.07 + 0.20 * oIn, 0.0001) * (0.55 + 0.45 * br[0]));
-    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (0.10 + 0.90 * br[0]);
+    b.origin.scale.setScalar(Math.max(0.07 + 0.20 * oIn, 0.0001) * (0.55 + 0.45 * BR[0]));
+    b.origin.material.opacity = (0.55 + 0.25 * oIn) * env * (0.10 + 0.90 * BR[0]);
     b.dest.position.set(c.x, c.y, Z_BEAM + 0.005);
     const dIn = Math.min(Math.max((p - 0.70) / 0.25, 0), 1);
-    b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001) * (0.55 + 0.45 * br[BEAM_SEGS]));
-    b.dest.material.opacity = dIn * env * (0.10 + 0.90 * br[BEAM_SEGS]);
+    b.dest.scale.setScalar(Math.max(0.05 + 0.34 * dIn, 0.0001) * (0.55 + 0.45 * BR[BEAM_SEGS]));
+    b.dest.material.opacity = dIn * env * (0.10 + 0.90 * BR[BEAM_SEGS]);
 
     // Sparks flow through the beam; dim by the path's mean visibility.
     const sp = b.sparks.geometry.attributes.position;
@@ -517,17 +550,17 @@ function updateBeams(now) {
     for (let k = 0; k < b.offsets.length; k++) {
       const t = (b.offsets[k] + flow) % 1;
       const s = t * BEAM_SEGS, s0 = Math.floor(s), fr = s - s0;
-      const p0 = pts[Math.min(s0, BEAM_SEGS)], p1 = pts[Math.min(s0 + 1, BEAM_SEGS)];
-      sp.setXYZ(k, p0.x + (p1.x - p0.x) * fr, p0.y + (p1.y - p0.y) * fr, Z_BEAM + 0.005);
+      const i0 = Math.min(s0, BEAM_SEGS), i1 = Math.min(s0 + 1, BEAM_SEGS);
+      sp.setXYZ(k, PTX[i0] + (PTX[i1] - PTX[i0]) * fr, PTY[i0] + (PTY[i1] - PTY[i0]) * fr, Z_BEAM + 0.005);
     }
     sp.needsUpdate = true;
     let meanBr = 0;
-    for (const v of br) meanBr += v;
+    for (let s = 0; s <= BEAM_SEGS; s++) meanBr += BR[s];
     meanBr /= BEAM_SEGS + 1;
     b.sparks.material.opacity = 0.85 * env * (0.10 + 0.90 * meanBr);
 
     if (p >= 1) {
-      if (br[BEAM_SEGS] > 0.5) {
+      if (BR[BEAM_SEGS] > 0.5) {
         const ring = new THREE.Sprite(new THREE.SpriteMaterial({
           map: ringTex, color: b.color, transparent: true,
           blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, opacity: 0.9,
