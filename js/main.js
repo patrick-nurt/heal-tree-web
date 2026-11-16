@@ -256,10 +256,13 @@ const threads = new THREE.Group();
 // (a fourth reads as a wireframe scratched over the continents) carrying seven
 // travelling lights at different speeds — the movement is legible without the
 // globe itself having to spin fast.
+// Each ring is nudged off the globe's centre (off = local offset). Kept small
+// so they still cradle the sphere, but big enough that they stop crossing in
+// one hard X at the middle — that read as a scratch, not a filament.
 const THREAD_SPECS = [
-  { tilt: 0.52, spin: 0.28, radius: 1.12, alpha: 0.42, nodes: 3 },
-  { tilt: -0.38, spin: -0.62, radius: 1.06, alpha: 0.31, nodes: 2 },
-  { tilt: 0.92, spin: 1.15, radius: 1.02, alpha: 0.26, nodes: 2 },
+  { tilt: 0.52, spin: 0.28, radius: 1.12, alpha: 0.42, nodes: 3, off: [0.00, 0.17, 0.00] },
+  { tilt: -0.38, spin: -0.62, radius: 1.06, alpha: 0.31, nodes: 2, off: [0.15, -0.09, 0.06] },
+  { tilt: 0.92, spin: 1.15, radius: 1.02, alpha: 0.26, nodes: 2, off: [-0.13, -0.11, -0.05] },
 ];
 const sigTravelers = [];
 for (const [ti, spec] of THREAD_SPECS.entries()) {
@@ -271,11 +274,13 @@ for (const [ti, spec] of THREAD_SPECS.entries()) {
     }),
   );
   torus.rotation.set(spec.tilt, 0, spec.spin);
+  torus.position.set(...spec.off);
   threads.add(torus);
 
   for (let n = 0; n < spec.nodes; n++) {
     const holder = new THREE.Group();
     holder.rotation.set(spec.tilt, 0, spec.spin);
+    holder.position.set(...spec.off);
     const node = new THREE.Sprite(new THREE.SpriteMaterial({
       map: THREAD_GLOW, color: GOLD_LIGHT, transparent: true, opacity: 0.9,
       blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
