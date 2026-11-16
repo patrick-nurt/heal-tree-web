@@ -21,7 +21,16 @@ const HEADERS = {
 const STRINGS = {
   en: {
     actButton: 'GIVE', receiveButton: 'RECEIVE',
-    actsOfKindness: 'ACTS OF KINDNESS', global24h: '24 HOURS · GLOBAL',
+    actsOfKindness: 'ACTS OF KINDNESS', global24h: 'IN THE LAST 24 HOURS · WORLDWIDE',
+    counterReset: 'Resets in {t}',
+    explainLine: 'GIVE sends light to a stranger. RECEIVE brings one to you.',
+    howTitle: 'How it works',
+    howSteps: [
+      ['One tap', 'Tap GIVE. A thread of golden light crosses the globe to one random stranger. You will never know who, and no message is ever attached.'],
+      ['Or receive', 'Tap RECEIVE to accept a light that is already waiting for you. The globe shows where in the world it came from.'],
+      ['The counter', 'The number above the globe counts acts of kindness across the whole world in the last 24 hours. Everybody sees the same number, including you.'],
+      ['Nothing is kept', 'No account, no message stored, no tracking. When a light is delivered it is deleted, and the thread that carried it stays visible only as it fades.'],
+    ],
     about: 'About', back: '← BACK', privacyPolicy: 'Privacy Policy',
     aboutTitle: 'The Heal In Tree',
     aboutBody: 'We are all connected by an invisible golden thread. This is a way to engage anonymously with a feel-good factor on both sides — to give kindness and to receive it, without conversation, without forms, without exposing who you are.',
@@ -41,7 +50,16 @@ const STRINGS = {
   },
   es: {
     actButton: 'DAR', receiveButton: 'RECIBIR',
-    actsOfKindness: 'ACTOS DE BONDAD', global24h: '24 HORAS · GLOBAL',
+    actsOfKindness: 'ACTOS DE BONDAD', global24h: 'EN LAS ÚLTIMAS 24 HORAS · TODO EL MUNDO',
+    counterReset: 'Se reinicia en {t}',
+    explainLine: 'DAR envía luz a un desconocido. RECIBIR te trae una a ti.',
+    howTitle: 'Cómo funciona',
+    howSteps: [
+      ['Un toque', 'Toca DAR. Un hilo de luz dorada cruza el planeta hacia un desconocido al azar. Nunca sabrás quién, y no lleva ningún mensaje.'],
+      ['O recibir', 'Toca RECIBIR para aceptar una luz que ya te esperaba. El planeta muestra desde qué parte del mundo llegó.'],
+      ['El contador', 'El número sobre el planeta cuenta los actos de bondad de todo el mundo en las últimas 24 horas. Todos ven el mismo número, tú también.'],
+      ['Nada se guarda', 'Sin cuenta, sin mensajes guardados, sin rastreo. Cuando una luz se entrega, se borra; el hilo que la llevó solo queda mientras se desvanece.'],
+    ],
     about: 'Acerca de', back: '← ATRÁS', privacyPolicy: 'Política de Privacidad',
     aboutTitle: 'The Heal In Tree',
     aboutBody: 'Todos estamos conectados por un hilo dorado invisible. Esta es una forma de interactuar anónimamente con un factor de bienestar en ambos lados — dar bondad y recibirla, sin conversación, sin formularios, sin exponer quién eres.',
@@ -61,11 +79,18 @@ const STRINGS = {
   },
 };
 const L = (navigator.language || 'en').toLowerCase().startsWith('es') ? STRINGS.es : STRINGS.en;
-document.querySelectorAll('[data-i18n]').forEach(el => { if (L[el.dataset.i18n]) el.textContent = L[el.dataset.i18n]; });
+// counterReset is templated ({t}) — paintReset() fills it once reset_at is known.
+document.querySelectorAll('[data-i18n]').forEach(el => {
+  const k = el.dataset.i18n;
+  if (k !== 'counterReset' && L[k]) el.textContent = L[k];
+});
 document.documentElement.lang = navigator.language.startsWith('es') ? 'es' : 'en';
 document.getElementById('privacySections').innerHTML = L.sections
   .map(([h, b]) => `<h2>${h}</h2><p>${b}</p>`)
   .join('');
+document.getElementById('howSteps').innerHTML =
+  `<h2>${L.howTitle}</h2>` +
+  L.howSteps.map(([h, b]) => `<h3>${h}</h3><p>${b}</p>`).join('');
 
 // ─── Geo tables (from planet_geo.dart + signal.dart) ─────────────────────────
 const COUNTRY_ANCHORS = {
@@ -88,6 +113,7 @@ const FORESTS = {
   africa: [5, 20], asia: [35, 100], oceania: [-25, 135],
 };
 const GOLD = 0xd4af37, GOLD_LIGHT = 0xf0e6c8;
+const REDUCE_MOTION = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const continentOf = (c) => CONTINENT_OF[(c || 'XX').toUpperCase()] || 'europe';
 const anchorOf = (c) => COUNTRY_ANCHORS[(c || 'XX').toUpperCase()] || COUNTRY_ANCHORS.XX;
 
@@ -226,12 +252,14 @@ const THREAD_GLOW = (() => {
   return t;
 })();
 const threads = new THREE.Group();
-// Selina asked for "more than one circle and ball moving" — three crossing
-// filaments, five travelling lights, slightly different speeds each.
+// Selina asked for "more than one circle and ball moving". Three filaments
+// (a fourth reads as a wireframe scratched over the continents) carrying seven
+// travelling lights at different speeds — the movement is legible without the
+// globe itself having to spin fast.
 const THREAD_SPECS = [
-  { tilt: 0.52, spin: 0.28, radius: 1.12, alpha: 0.48, nodes: 2 },
-  { tilt: -0.38, spin: -0.62, radius: 1.06, alpha: 0.36, nodes: 2 },
-  { tilt: 0.92, spin: 1.15, radius: 1.02, alpha: 0.30, nodes: 1 },
+  { tilt: 0.52, spin: 0.28, radius: 1.12, alpha: 0.42, nodes: 3 },
+  { tilt: -0.38, spin: -0.62, radius: 1.06, alpha: 0.31, nodes: 2 },
+  { tilt: 0.92, spin: 1.15, radius: 1.02, alpha: 0.26, nodes: 2 },
 ];
 const sigTravelers = [];
 for (const [ti, spec] of THREAD_SPECS.entries()) {
@@ -605,6 +633,7 @@ function updateBeams(now) {
 }
 // ─── Interaction / backend ───────────────────────────────────────────────────
 const $count = document.getElementById('count');
+const $reset = document.getElementById('resetLine');
 const $toast = document.getElementById('toast');
 let userCountry = 'XX';
 let count = 0;
@@ -636,10 +665,27 @@ async function detectCountry() {
 
 async function pollCounter() {
   try {
-    const res = await fetch(`${REST}/counter?id=eq.global&select=count`, { headers: HEADERS });
-    if (res.ok) count = (await res.json())[0]?.count ?? count;
+    const res = await fetch(`${REST}/counter?id=eq.global&select=count,reset_at`, { headers: HEADERS });
+    if (res.ok) {
+      const row = (await res.json())[0];
+      if (row) { count = row.count ?? count; if (row.reset_at) resetAt = Date.parse(row.reset_at); }
+    }
     $count.textContent = count;
+    paintReset();
   } catch { /* offline: keep last value */ }
+}
+
+// The counter is a 24h rolling total that resets on a fixed clock, so say
+// when — Selina's "does it reset every 24 hrs?" shouldn't need an email.
+let resetAt = 0;
+const pad2 = (n) => String(n).padStart(2, '0');
+function paintReset() {
+  if (!resetAt) return;
+  let ms = resetAt - Date.now();
+  if (ms <= 0) { $reset.textContent = ''; pollCounter(); return; }
+  const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+  const t = h > 0 ? `${h}h ${pad2(m)}m` : `${m}m`;
+  $reset.textContent = L.counterReset.replace('{t}', t);
 }
 
 let DEMO_STYLE = null;
@@ -701,23 +747,67 @@ privacySheet.querySelector('.back').addEventListener('click', () => privacySheet
 let last = performance.now();
 
 
+// The globe is sized and centred in the HUD's free space so it never sits on
+// the words (Selina: "the wording behind the globe is obscured"). Everything is
+// measured in CSS px; one world unit equals one globe radius on screen, so the
+// camera's fov/offset follow directly from the measured free rect.
+function freeRect() {
+  const hud = document.getElementById('hud');
+  const r = (sel) => hud.querySelector(sel).getBoundingClientRect();
+  const headline = r('.headline'), counter = r('.counter'), explain = r('#explain'), btns = r('.buttons');
+  if (innerWidth <= innerHeight) {
+    // Portrait: words stack top, buttons bottom — the band between them is free.
+    return { top: counter.bottom, bottom: Math.min(explain.top, btns.top), left: 0, right: innerWidth };
+  }
+  // Landscape/short: words sit in a left column, buttons in a right column, so
+  // the globe takes the horizontal gap between them.
+  return {
+    top: 8, bottom: innerHeight - 8,
+    left: Math.max(headline.right, counter.right) + 10, right: btns.left - 10,
+  };
+}
+
 function resize() {
   const w = innerWidth, h = innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
-  // Planet radius as a fraction of the smaller dimension: portrait 78%
-  // (fits the HUD); landscape 60% — desktop windows are height-limited and
-  // the globe otherwise dwarfs the counter and buttons.
-  const frac = w <= h ? 0.78 : 0.60;
-  const halfPx = Math.min(w, h) / 2;
-  camera.fov = THREE.MathUtils.radToDeg(
-    2 * Math.atan((h / 2) / (camera.position.z * frac * halfPx)),
+  const free = freeRect();
+  const portrait = w <= h;
+  const availW = Math.max(120, free.right - free.left - 32);
+  const availH = Math.max(120, free.bottom - free.top - (portrait ? 20 : 24));
+  // Radius in CSS px == min(avail)/2; solve fov from the vertical extent.
+  // 0.97 ≈ perspective silhouette bulge (a sphere's outline is slightly larger
+  // than its equatorial circle at z=0); keeps the disc clear of the words.
+  const radiusPx = Math.min(availW, availH) / 2 * (portrait ? 0.97 : 0.9);
+  camera.fov = Math.min(
+    60, THREE.MathUtils.radToDeg(2 * Math.atan((h / 2) / (camera.position.z * radiusPx))),
   );
-  camera.fov = Math.min(camera.fov, 60);
+  // Shift the whole projection (globe + beams) so the disc centre lands on the
+  // free rect's centre. A view offset keeps the layer alignment exact; moving
+  // the camera itself would desync the camera-plane beam strips.
+  const dx = (free.left + free.right) / 2 - w / 2;
+  const dy = (free.top + free.bottom) / 2 - h / 2;
+  if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+    camera.setViewOffset(w, h, -dx, -dy, w, h);
+  } else {
+    camera.clearViewOffset();
+  }
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
 resize();
+addEventListener('orientationchange', () => setTimeout(resize, 120));
+// The HUD is measured in CSS px, so re-fit whenever its own boxes change —
+// font swap (Cormorant loads late), tagline wrap, translate, safe-area inset.
+if (document.fonts?.ready) document.fonts.ready.then(resize);
+if ('ResizeObserver' in window) {
+  const ro = new ResizeObserver(() => resize());
+  const hud = document.getElementById('hud');
+  for (const sel of ['.headline', '.counter', '#explain', '.buttons']) {
+    const el = hud.querySelector(sel);
+    if (el) ro.observe(el);
+  }
+}
 
 let running = true;
 document.addEventListener('visibilitychange', () => {
@@ -730,15 +820,21 @@ function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
 
-  // Selina's FINAL pick — both layers move: globe drifts 60 s/rev, threads counter-sweep.
-  world.rotation.y += (Math.PI * 2) / 60 * dt;
-  threads.rotation.y -= dt * 0.33;
+  // Selina's FINAL pick — both layers move: globe drifts, threads counter-sweep.
+  // Her later note: "more than one circle and ball moving… shows more movement",
+  // with mixed reactions to a spinning globe. So the globe keeps an honest,
+  // slow drift (60 s/rev) while the thread lattice and its travelling lights
+  // carry the visible motion. Reduced-motion users get a still globe.
+  if (!REDUCE_MOTION) {
+    world.rotation.y += (Math.PI * 2) / 60 * dt;
+    threads.rotation.y -= dt * 0.55;
+  }
   atmoBreathe.phase += dt / 5.2;
   const br = 0.8 + 0.2 * Math.sin(atmoBreathe.phase * Math.PI * 2); // 0.6 … 1.0
   atmo.material.opacity = 0.8 * br;
   haze.material.opacity = 0.35 * br;
   for (const t of sigTravelers) {
-    const phase = ((now % SIG_PERIOD) / SIG_PERIOD) * t.speed + t.phase;
+    const phase = REDUCE_MOTION ? t.phase : ((now % SIG_PERIOD) / SIG_PERIOD) * t.speed + t.phase;
     t.holder.rotation.z = (phase % 1) * Math.PI * 2;
     t.node.material.opacity = 0.7 + 0.3 * Math.sin(phase * Math.PI * 6);
   }

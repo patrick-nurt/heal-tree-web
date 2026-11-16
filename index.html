@@ -27,14 +27,22 @@
 
   /* ── HUD ─────────────────────────────────────────────── */
   #hud { position: fixed; inset: 0; pointer-events: none; display: flex; flex-direction: column; }
-  .headline { text-align: center; padding-top: calc(10px + env(safe-area-inset-top)); }
+  /* Scrim: keeps the headline, tagline and counter legible where the globe's
+     glow used to wash them out (Selina: "wording behind the globe is obscured"). */
+  #hud::before {
+    content: ""; position: absolute; left: 0; right: 0; top: 0; height: 300px;
+    background: linear-gradient(180deg, rgba(10,10,10,.94) 0%, rgba(10,10,10,.80) 52%, rgba(10,10,10,0) 100%);
+    pointer-events: none;
+  }
+  .headline { text-align: center; padding-top: calc(10px + env(safe-area-inset-top)); position: relative; }
   .headline .brand { font-size: 30px; font-weight: 500; color: var(--gold); letter-spacing: .06em; text-shadow: 0 0 18px rgba(212,175,55,.4); }
   .headline .line { font-size: 15.5px; color: var(--text-dim); font-style: italic; margin-top: 3px; }
-  .counter { padding-top: 30px; }  /* more air below the tagline */
+  .counter { padding-top: 30px; position: relative; }  /* more air below the tagline */
   .counter { text-align: center; }
   #count { font-size: 44px; font-weight: 400; color: var(--gold); line-height: 1.0; text-shadow: 0 0 14px rgba(212,175,55,.28); }
-  .counter .label { font-size: 13px; letter-spacing: .42em; color: var(--gold); opacity: .85; margin-top: 22px; }
-  .counter .sub { font-size: 11px; letter-spacing: .3em; color: var(--text-dim); opacity: .6; margin-top: 3px; }
+  .counter .label { font-size: 13px; letter-spacing: .42em; color: var(--gold); opacity: .9; margin-top: 22px; }
+  .counter .sub { font-size: 11px; letter-spacing: .2em; color: var(--text-dim); opacity: .8; margin-top: 5px; }
+  .counter .reset { font-size: 10px; letter-spacing: .2em; color: var(--text-dim); opacity: .5; margin-top: 8px; font-variant-numeric: tabular-nums; }
 
   #info {
     position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 16px;
@@ -79,6 +87,7 @@
     0% { opacity: .95; transform: scale(.55); }
     100% { opacity: 0; transform: scale(1.9); }
   }
+  .action .ripple {
     position: absolute; inset: 0; border-radius: 50%;
     border: 1px solid rgba(212,175,55,.45);
     animation: ripple 3.6s ease-out infinite;
@@ -94,11 +103,21 @@
   .action .label { font-size: 20px; letter-spacing: .26em; margin-left: .26em; color: var(--gold); }
 
   #toast {
-    position: absolute; bottom: calc(150px + env(safe-area-inset-bottom)); left: 0; right: 0;
+    position: absolute; bottom: calc(196px + env(safe-area-inset-bottom)); left: 0; right: 0;
     text-align: center; font-size: 16px; color: var(--text-dim);
     opacity: 0; transition: opacity .4s ease; font-style: italic;
   }
   #toast.show { opacity: 1; }
+
+  /* One permanent line answering "what does it actually do?" — Selina's
+     point 3, without a popup nagging every visit. */
+  #explain {
+    position: absolute; left: 26px; right: 26px;
+    bottom: calc(162px + env(safe-area-inset-bottom));
+    text-align: center; font-size: 14px; line-height: 1.45;
+    color: var(--text-dim); font-weight: 300;
+  }
+  #explain b { color: var(--gold); font-weight: 500; letter-spacing: .04em; }
 
   /* ── Sheets ──────────────────────────────────────────── */
   .sheet {
@@ -135,6 +154,28 @@
     position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
     text-align: center; padding: 30px; color: var(--text-dim); font-size: 18px; line-height: 1.6;
   }
+
+  /* Landscape / short windows: the stacked HUD would sit on the globe.
+     Left column carries the words, right column the buttons, globe centred. */
+  @media (orientation: landscape) and (max-height: 560px) {
+    #hud::before { display: none; }
+    .headline { position: absolute; top: calc(16px + env(safe-area-inset-top)); left: 26px; right: auto; text-align: left; padding-top: 0; }
+    .headline .brand { font-size: 26px; }
+    .headline .line { font-size: 13.5px; }
+    .counter { position: absolute; top: calc(84px + env(safe-area-inset-top)); left: 26px; right: auto; text-align: left; padding-top: 0; }
+    #count { font-size: 40px; }
+    .counter .label { margin-top: 14px; font-size: 11px; }
+    .counter .sub { font-size: 10px; }
+    .buttons { top: 50%; bottom: auto; transform: translateY(-50%); left: auto; right: 26px;
+      flex-direction: column; gap: 22px; width: auto; }
+    #explain { left: 26px; right: auto; width: 300px; text-align: left; bottom: calc(18px + env(safe-area-inset-bottom)); font-size: 13.5px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .action .ripple { animation: none; opacity: .28; }
+    .action .ring { transition: none; }
+    #loading .pulse { animation-duration: 2.4s; }
+  }
 </style>
 </head>
 <body>
@@ -150,7 +191,8 @@
   <div class="counter">
     <div id="count">0</div>
     <div class="label" data-i18n="actsOfKindness">ACTS OF KINDNESS</div>
-    <div class="sub" data-i18n="global24h">24 HOURS · GLOBAL</div>
+    <div class="sub" data-i18n="global24h">IN THE LAST 24 HOURS · WORLDWIDE</div>
+    <div class="reset" id="resetLine" data-i18n="counterReset"></div>
   </div>
   <button id="info" aria-label="About">i</button>
   <div class="buttons">
@@ -173,6 +215,7 @@
       <span class="label" data-i18n="receiveButton">RECEIVE</span>
     </button>
   </div>
+  <p id="explain" data-i18n="explainLine"></p>
   <div id="toast"></div>
 </div>
 
@@ -180,6 +223,7 @@
   <button class="back" data-i18n="back">← BACK</button>
   <h1 data-i18n="aboutTitle">The Heal In Tree</h1>
   <p data-i18n="aboutBody"></p>
+  <div id="howSteps"></div>
   <p class="dim" data-i18n="aboutDescription"></p>
   <button class="privlink" id="openPrivacy" data-i18n="privacyPolicy">Privacy Policy</button>
   <div class="foot">© 2026 Selina Ingram · The Heal In Tree</div>
@@ -193,6 +237,6 @@
 </div>
 
 <script type="importmap">{ "imports": { "three": "./js/three.module.min.js" } }</script>
-<script type="module" src="./js/main.js?v=49"></script>
+<script type="module" src="./js/main.js?v=50"></script>
 </body>
 </html>
