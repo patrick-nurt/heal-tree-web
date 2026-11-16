@@ -120,19 +120,37 @@
 
   /* ── Sheets ──────────────────────────────────────────── */
   .sheet {
-    position: fixed; inset: 0; background: rgba(10,10,10,.985);
+    position: fixed; inset: 0; background: var(--bg);  /* opaque: a translucent
+      sheet let the HUD's "i" button ghost through the title */
     padding: calc(24px + env(safe-area-inset-top)) 30px 40px;
     overflow-y: auto; display: none; pointer-events: auto;
+    z-index: 10;
+    -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   }
   .sheet.open { display: block; }
   .sheet .back {
     background: none; border: none; color: var(--gold); font-size: 16px;
     font-family: inherit; cursor: pointer; letter-spacing: .12em; margin-bottom: 26px;
+    /* Long copy scrolls well past the fold; keep the way out reachable. */
+    position: sticky; top: calc(6px - env(safe-area-inset-top));
+    z-index: 2; padding: 6px 0;
   }
   .sheet h1 { font-size: 34px; font-weight: 300; color: var(--gold); letter-spacing: .04em; margin-bottom: 22px; }
   .sheet h2 { font-size: 20px; font-weight: 500; color: var(--gold); letter-spacing: .05em; margin: 24px 0 8px; }
   .sheet p { font-size: 18px; font-weight: 300; line-height: 1.6; color: var(--text); margin-bottom: 16px; }
   .sheet p.dim { color: var(--text-dim); font-size: 16px; }
+  /* Selina's info page: numbered steps, prose paragraphs. */
+  .sheet .about-lead p { font-size: 18px; }
+  #howSteps h2 { margin-top: 30px; }
+  #howSteps .step { margin-bottom: 24px; }
+  #howSteps h3 {
+    font-size: 17px; font-weight: 500; color: var(--gold);
+    letter-spacing: .08em; text-transform: uppercase; margin: 0 0 8px;
+  }
+  #howSteps h3 .num { color: var(--gold-dark); margin-right: 2px; }
+  #howSteps p { margin: 0 0 10px; }
+  .about-closing { margin-top: 32px; }
+  .about-closing p { font-size: 18px; font-style: italic; color: var(--gold-light); margin-bottom: 4px; }
   .sheet .privlink {
     background: none; border: none; color: var(--gold-dark); font-size: 14px; font-family: inherit;
     text-decoration: underline; cursor: pointer; margin-top: 12px; letter-spacing: .05em;
@@ -220,9 +238,9 @@
 <div class="sheet" id="aboutSheet">
   <button class="back" data-i18n="back">← BACK</button>
   <h1 data-i18n="aboutTitle">The Heal In Tree</h1>
-  <p data-i18n="aboutBody"></p>
+  <div class="about-lead"></div>
   <div id="howSteps"></div>
-  <p class="dim" data-i18n="aboutDescription"></p>
+  <div class="about-closing"></div>
   <button class="privlink" id="openPrivacy" data-i18n="privacyPolicy">Privacy Policy</button>
   <div class="foot">© 2026 Selina Ingram · The Heal In Tree</div>
 </div>
@@ -235,6 +253,6 @@
 </div>
 
 <script type="importmap">{ "imports": { "three": "./js/three.module.min.js" } }</script>
-<script type="module" src="./js/main.js?v=51"></script>
+<script type="module" src="./js/main.js?v=52"></script>
 </body>
 </html>

@@ -23,17 +23,34 @@ const STRINGS = {
     actButton: 'GIVE', receiveButton: 'RECEIVE',
     actsOfKindness: 'ACTS OF KINDNESS', global24h: 'IN THE LAST 24 HOURS · WORLDWIDE',
     explainLine: 'GIVE sends light to a stranger. RECEIVE brings one to you.',
-    howTitle: 'How it works',
-    howSteps: [
-      ['One tap', 'Tap GIVE. A thread of golden light crosses the globe to one random stranger. You will never know who, and no message is ever attached.'],
-      ['Or receive', 'Tap RECEIVE to accept a light that is already waiting for you. The globe shows where in the world it came from.'],
-      ['The counter', 'The number above the globe counts acts of kindness across the whole world in the last 24 hours. Everybody sees the same number, including you.'],
-      ['Nothing is kept', 'No account, no message stored, no tracking. When a light is delivered it is deleted, and the thread that carried it stays visible only as it fades.'],
-    ],
-    about: 'About', back: '← BACK', privacyPolicy: 'Privacy Policy',
     aboutTitle: 'The Heal In Tree',
-    aboutBody: 'We are all connected by an invisible golden thread. This is a way to engage anonymously with a feel-good factor on both sides — to give kindness and to receive it, without conversation, without forms, without exposing who you are.',
-    aboutDescription: 'Tap GIVE to send a golden light pulse to someone, somewhere on the planet. Tap RECEIVE to accept kindness from a stranger.',
+    aboutLead: [
+      'We are all connected by an invisible golden thread.',
+      'Heal In Tree is a place to engage anonymously with kindness, offering a feel-good experience on both sides. A simple way to give kindness and receive it, without conversation, without forms and without revealing who you are.',
+    ],
+    howTitle: 'How It Works',
+    howSteps: [
+      { t: 'GIVE', p: [
+        'Tap GIVE to send a golden light across the globe to a random stranger, somewhere in the world. No identity is revealed and no message is attached.',
+        'If you wish, take a moment before sending to set an intention of kindness. Let your golden light carry that intention into the world.',
+      ] },
+      { t: 'RECEIVE', p: [
+        'Tap RECEIVE to accept a golden light from somewhere in the world. The globe gives an approximate indication of where it originated.',
+        'Both actions offer a gentle pulse beneath your finger, creating a moment to feel the exchange of kindness.',
+      ] },
+      { t: 'The Digital Forest', p: [
+        'Our digital forest is a living symbol of collective kindness. Every golden light sent adds to its meaning, representing the kindness that is always present in our world.',
+      ] },
+      { t: 'The Global Counter', p: [
+        'The number above the globe counts the golden lights sent across the world in the last 24 hours. Everyone sees the same number, a shared reflection of kindness in motion.',
+      ] },
+      { t: 'Nothing Is Personal', p: [
+        'No accounts, no conversations, no identities and no personal profiles. Every interaction is anonymous. No personal connection is required, and no message is attached.',
+        'Kindness can be shared without needing to know who gives it or who receives it.',
+      ] },
+    ],
+    closing: ['One person. One act. One ripple at a time.', 'We Are Mankind.'],
+    about: 'About', back: '← BACK', privacyPolicy: 'Privacy Policy',
     noSignalsAvailable: 'No signals available right now',
     privacyYourPrivacy: 'Your Privacy',
     privacyLastUpdated: 'Last updated: October 2026',
@@ -51,17 +68,34 @@ const STRINGS = {
     actButton: 'DAR', receiveButton: 'RECIBIR',
     actsOfKindness: 'ACTOS DE BONDAD', global24h: 'EN LAS ÚLTIMAS 24 HORAS · TODO EL MUNDO',
     explainLine: 'DAR envía luz a un desconocido. RECIBIR te trae una a ti.',
-    howTitle: 'Cómo funciona',
-    howSteps: [
-      ['Un toque', 'Toca DAR. Un hilo de luz dorada cruza el planeta hacia un desconocido al azar. Nunca sabrás quién, y no lleva ningún mensaje.'],
-      ['O recibir', 'Toca RECIBIR para aceptar una luz que ya te esperaba. El planeta muestra desde qué parte del mundo llegó.'],
-      ['El contador', 'El número sobre el planeta cuenta los actos de bondad de todo el mundo en las últimas 24 horas. Todos ven el mismo número, tú también.'],
-      ['Nada se guarda', 'Sin cuenta, sin mensajes guardados, sin rastreo. Cuando una luz se entrega, se borra; el hilo que la llevó solo queda mientras se desvanece.'],
-    ],
-    about: 'Acerca de', back: '← ATRÁS', privacyPolicy: 'Política de Privacidad',
     aboutTitle: 'The Heal In Tree',
-    aboutBody: 'Todos estamos conectados por un hilo dorado invisible. Esta es una forma de interactuar anónimamente con un factor de bienestar en ambos lados — dar bondad y recibirla, sin conversación, sin formularios, sin exponer quién eres.',
-    aboutDescription: 'Toca DAR para enviar un pulso de luz dorada a alguien en algún lugar del planeta. Toca RECIBIR para aceptar la bondad de un desconocido.',
+    aboutLead: [
+      'Todos estamos conectados por un hilo dorado invisible.',
+      'Heal In Tree es un lugar para relacionarte anónimamente con la bondad, ofreciendo una experiencia de bienestar en ambos lados. Una forma sencilla de dar bondad y recibirla, sin conversación, sin formularios y sin revelar quién eres.',
+    ],
+    howTitle: 'Cómo Funciona',
+    howSteps: [
+      { t: 'DAR', p: [
+        'Toca DAR para enviar una luz dorada a través del planeta a un desconocido al azar, en algún lugar del mundo. No se revela ninguna identidad y no va ningún mensaje adjunto.',
+        'Si lo deseas, tómate un momento antes de enviar para fijar una intención de bondad. Deja que tu luz dorada lleve esa intención al mundo.',
+      ] },
+      { t: 'RECIBIR', p: [
+        'Toca RECIBIR para aceptar una luz dorada de algún lugar del mundo. El planeta da una indicación aproximada de dónde se originó.',
+        'Ambas acciones ofrecen un pulso suave bajo tu dedo, creando un momento para sentir el intercambio de bondad.',
+      ] },
+      { t: 'El Bosque Digital', p: [
+        'Nuestro bosque digital es un símbolo vivo de la bondad colectiva. Cada luz dorada enviada añade significado, representando la bondad que siempre está presente en nuestro mundo.',
+      ] },
+      { t: 'El Contador Global', p: [
+        'El número sobre el planeta cuenta las luces doradas enviadas en todo el mundo en las últimas 24 horas. Todos ven el mismo número, un reflejo compartido de la bondad en movimiento.',
+      ] },
+      { t: 'Nada Es Personal', p: [
+        'Sin cuentas, sin conversaciones, sin identidades y sin perfiles personales. Cada interacción es anónima. No se requiere ninguna conexión personal y no va ningún mensaje adjunto.',
+        'La bondad puede compartirse sin necesidad de saber quién la da o quién la recibe.',
+      ] },
+    ],
+    closing: ['Una persona. Un acto. Una onda a la vez.', 'Somos la Humanidad.'],
+    about: 'Acerca de', back: '← ATRÁS', privacyPolicy: 'Política de Privacidad',
     noSignalsAvailable: 'No hay señales disponibles en este momento',
     privacyYourPrivacy: 'Tu Privacidad',
     privacyLastUpdated: 'Última actualización: Octubre 2026',
@@ -84,9 +118,20 @@ document.documentElement.lang = navigator.language.startsWith('es') ? 'es' : 'en
 document.getElementById('privacySections').innerHTML = L.sections
   .map(([h, b]) => `<h2>${h}</h2><p>${b}</p>`)
   .join('');
+// Selina's info-page copy, verbatim (Nov 16). Numbered steps, one paragraph
+// per point — hers reads better as prose than as bullets.
+const about = document.getElementById('aboutSheet');
+about.querySelector('.about-lead').innerHTML =
+  L.aboutLead.map((t) => `<p>${t}</p>`).join('');
 document.getElementById('howSteps').innerHTML =
   `<h2>${L.howTitle}</h2>` +
-  L.howSteps.map(([h, b]) => `<h3>${h}</h3><p>${b}</p>`).join('');
+  L.howSteps.map((st, i) => `
+    <div class="step">
+      <h3><span class="num">${i + 1}.</span> ${st.t}</h3>
+      ${st.p.map((t) => `<p>${t}</p>`).join('')}
+    </div>`).join('');
+about.querySelector('.about-closing').innerHTML =
+  L.closing.map((t) => `<p>${t}</p>`).join('');
 
 // ─── Geo tables (from planet_geo.dart + signal.dart) ─────────────────────────
 const COUNTRY_ANCHORS = {
