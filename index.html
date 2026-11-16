@@ -42,7 +42,6 @@
   #count { font-size: 44px; font-weight: 400; color: var(--gold); line-height: 1.0; text-shadow: 0 0 14px rgba(212,175,55,.28); }
   .counter .label { font-size: 13px; letter-spacing: .42em; color: var(--gold); opacity: .9; margin-top: 22px; }
   .counter .sub { font-size: 11px; letter-spacing: .2em; color: var(--text-dim); opacity: .8; margin-top: 5px; }
-  .counter .reset { font-size: 10px; letter-spacing: .2em; color: var(--text-dim); opacity: .5; margin-top: 8px; font-variant-numeric: tabular-nums; }
 
   #info {
     position: absolute; top: calc(14px + env(safe-area-inset-top)); right: 16px;
@@ -192,7 +191,6 @@
     <div id="count">0</div>
     <div class="label" data-i18n="actsOfKindness">ACTS OF KINDNESS</div>
     <div class="sub" data-i18n="global24h">IN THE LAST 24 HOURS · WORLDWIDE</div>
-    <div class="reset" id="resetLine" data-i18n="counterReset"></div>
   </div>
   <button id="info" aria-label="About">i</button>
   <div class="buttons">
@@ -237,6 +235,6 @@
 </div>
 
 <script type="importmap">{ "imports": { "three": "./js/three.module.min.js" } }</script>
-<script type="module" src="./js/main.js?v=50"></script>
+<script type="module" src="./js/main.js?v=51"></script>
 </body>
 </html>

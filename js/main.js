@@ -22,7 +22,6 @@ const STRINGS = {
   en: {
     actButton: 'GIVE', receiveButton: 'RECEIVE',
     actsOfKindness: 'ACTS OF KINDNESS', global24h: 'IN THE LAST 24 HOURS · WORLDWIDE',
-    counterReset: 'Resets in {t}',
     explainLine: 'GIVE sends light to a stranger. RECEIVE brings one to you.',
     howTitle: 'How it works',
     howSteps: [
@@ -51,7 +50,6 @@ const STRINGS = {
   es: {
     actButton: 'DAR', receiveButton: 'RECIBIR',
     actsOfKindness: 'ACTOS DE BONDAD', global24h: 'EN LAS ÚLTIMAS 24 HORAS · TODO EL MUNDO',
-    counterReset: 'Se reinicia en {t}',
     explainLine: 'DAR envía luz a un desconocido. RECIBIR te trae una a ti.',
     howTitle: 'Cómo funciona',
     howSteps: [
@@ -79,10 +77,8 @@ const STRINGS = {
   },
 };
 const L = (navigator.language || 'en').toLowerCase().startsWith('es') ? STRINGS.es : STRINGS.en;
-// counterReset is templated ({t}) — paintReset() fills it once reset_at is known.
 document.querySelectorAll('[data-i18n]').forEach(el => {
-  const k = el.dataset.i18n;
-  if (k !== 'counterReset' && L[k]) el.textContent = L[k];
+  if (L[el.dataset.i18n]) el.textContent = L[el.dataset.i18n];
 });
 document.documentElement.lang = navigator.language.startsWith('es') ? 'es' : 'en';
 document.getElementById('privacySections').innerHTML = L.sections
@@ -638,7 +634,6 @@ function updateBeams(now) {
 }
 // ─── Interaction / backend ───────────────────────────────────────────────────
 const $count = document.getElementById('count');
-const $reset = document.getElementById('resetLine');
 const $toast = document.getElementById('toast');
 let userCountry = 'XX';
 let count = 0;
@@ -670,27 +665,18 @@ async function detectCountry() {
 
 async function pollCounter() {
   try {
-    const res = await fetch(`${REST}/counter?id=eq.global&select=count,reset_at`, { headers: HEADERS });
+    // The counter is a true rolling 24h total, so read the RPC that recomputes
+    // the window instead of the stored column — a stored value goes stale-high
+    // whenever older acts age out and nobody taps.
+    const res = await fetch(`${REST}/rpc/get_global_counter`, {
+      method: 'POST', headers: HEADERS, body: '{}',
+    });
     if (res.ok) {
-      const row = (await res.json())[0];
-      if (row) { count = row.count ?? count; if (row.reset_at) resetAt = Date.parse(row.reset_at); }
+      const out = await res.json();
+      if (out && typeof out.count === 'number') count = out.count;
     }
     $count.textContent = count;
-    paintReset();
   } catch { /* offline: keep last value */ }
-}
-
-// The counter is a 24h rolling total that resets on a fixed clock, so say
-// when — Selina's "does it reset every 24 hrs?" shouldn't need an email.
-let resetAt = 0;
-const pad2 = (n) => String(n).padStart(2, '0');
-function paintReset() {
-  if (!resetAt) return;
-  let ms = resetAt - Date.now();
-  if (ms <= 0) { $reset.textContent = ''; pollCounter(); return; }
-  const h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
-  const t = h > 0 ? `${h}h ${pad2(m)}m` : `${m}m`;
-  $reset.textContent = L.counterReset.replace('{t}', t);
 }
 
 let DEMO_STYLE = null;
