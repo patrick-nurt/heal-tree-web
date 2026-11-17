@@ -23,6 +23,7 @@ const STRINGS = {
     actButton: 'GIVE', receiveButton: 'RECEIVE',
     actsOfKindness: 'ACTS OF KINDNESS', global24h: 'IN THE LAST 24 HOURS · WORLDWIDE',
     explainLine: 'GIVE sends light to a stranger. RECEIVE brings one to you.',
+    rotatePrompt: 'The Heal In Tree is made for portrait. Turn your phone upright to continue.',
     aboutTitle: 'The Heal In Tree',
     aboutLead: [
       'We are all connected by an invisible golden thread.',
@@ -68,6 +69,7 @@ const STRINGS = {
     actButton: 'DAR', receiveButton: 'RECIBIR',
     actsOfKindness: 'ACTOS DE BONDAD', global24h: 'EN LAS ÚLTIMAS 24 HORAS · TODO EL MUNDO',
     explainLine: 'DAR envía luz a un desconocido. RECIBIR te trae una a ti.',
+    rotatePrompt: 'The Heal In Tree está hecha para vertical. Gira tu teléfono para continuar.',
     aboutTitle: 'The Heal In Tree',
     aboutLead: [
       'Todos estamos conectados por un hilo dorado invisible.',
@@ -169,6 +171,30 @@ function latLonToVec3(lat, lon, r = 1) {
     r * Math.sin(phi) * Math.sin(theta),
   );
 }
+
+// ─── Zoom lock ───────────────────────────────────────────────────────────────
+// A fixed full-screen experience: pinch-zoom and double-tap-zoom break the
+// layout and let the user end up inside a corner of the globe. iOS Safari
+// ignores `user-scalable=no`, so the gestures have to be refused directly.
+// Passively-false only on our own document; scrolling inside sheets still works
+// because those keep their own scroll containers with `overscroll-behavior`.
+for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+  window.addEventListener(type, (e) => e.preventDefault(), { passive: false, capture: true });
+}
+window.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 1) e.preventDefault();
+}, { passive: false, capture: true });
+// Double-tap zoom on Safari: two quick taps with no pan between them.
+let lastTouchEnd = 0;
+window.addEventListener('touchend', (e) => {
+  const now = performance.now();
+  if (now - lastTouchEnd < 320) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive: false, capture: true });
+// Desktop / trackpad pinch arrives as ctrl+wheel.
+window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false, capture: true });
+// Keyboard zoom (Cmd/Ctrl +/-/0) is intentionally left alone: it is an
+// accessibility affordance and not part of the touch experience.
 
 // ─── Renderer / scene ────────────────────────────────────────────────────────
 const canvas = document.getElementById('scene');
@@ -306,16 +332,54 @@ const THREAD_SPECS = [
   { tilt: 0.92, spin: 1.15, radius: 1.02, alpha: 0.26, nodes: 2, off: [-0.13, -0.11, -0.05] },
 ];
 const sigTravelers = [];
+// Filament material: the whole ring must draw (a depth-tested one gets clipped
+// at the silhouette and reads as broken arcs), but the half passing behind the
+// globe should dim so it still reads as passing *behind* rather than being
+// painted on the surface. View-space z against the globe's centre does that
+// for a few ALU ops per fragment.
+const threadMats = [];
+function threadMaterial(alpha) {
+  const m = new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(GOLD) },
+      uAlpha: { value: alpha },
+      uCentreZ: { value: -6.8 },   // globe centre in view space, updated per frame
+    },
+    vertexShader: /* glsl */`
+      varying float vZ;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vZ = mv.z;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      uniform vec3 uColor; uniform float uAlpha; uniform float uCentreZ;
+      varying float vZ;
+      void main() {
+        // Larger view-space z = nearer the camera. Dim the far side, but keep
+        // a healthy floor and a wide transition: a low floor made the back arc
+        // vanish into the background, which reads as the ring stopping dead.
+        float front = smoothstep(uCentreZ - 0.75, uCentreZ + 0.60, vZ);
+        gl_FragColor = vec4(uColor, uAlpha * mix(0.55, 1.0, front));
+      }`,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: false,
+  });
+  threadMats.push(m);
+  return m;
+}
 for (const [ti, spec] of THREAD_SPECS.entries()) {
   const torus = new THREE.Mesh(
     new THREE.TorusGeometry(spec.radius, ti === 0 ? 0.0055 : 0.0045, 8, 160),
-    new THREE.MeshBasicMaterial({
-      color: GOLD, transparent: true, opacity: spec.alpha,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }),
+    threadMaterial(spec.alpha),
   );
   torus.rotation.set(spec.tilt, 0, spec.spin);
   torus.position.set(...spec.off);
+  // Above the planet (0) but below the atmosphere glow (3), so the limb still
+  // blooms over the rings. Needed because depthTest is off.
+  torus.renderOrder = 2;
   threads.add(torus);
 
   for (let n = 0; n < spec.nodes; n++) {
@@ -846,13 +910,22 @@ if ('ResizeObserver' in window) {
 }
 
 let running = true;
+// Landscape is gated by a portrait prompt, so stop rendering the covered canvas.
+const portraitMQ = matchMedia('(orientation: portrait)');
+let inPortrait = portraitMQ.matches;
+const syncOrientation = () => {
+  inPortrait = portraitMQ.matches;
+  if (inPortrait && !document.hidden) { last = performance.now(); requestAnimationFrame(frame); }
+  resize();
+};
+portraitMQ.addEventListener('change', syncOrientation);
 document.addEventListener('visibilitychange', () => {
   running = !document.hidden;
   if (running) { last = performance.now(); requestAnimationFrame(frame); }
 });
 
 function frame(now) {
-  if (!running) return;
+  if (!running || !inPortrait) return;
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
 
