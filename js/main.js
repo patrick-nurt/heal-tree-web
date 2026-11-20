@@ -21,7 +21,7 @@ const HEADERS = {
 const STRINGS = {
   en: {
     actButton: 'GIVE', receiveButton: 'RECEIVE',
-    actsOfKindness: 'ACTS OF KINDNESS', global24h: 'IN THE LAST 24 HOURS · WORLDWIDE',
+    actsOfKindness: 'ACTS OF KINDNESS', global24h: 'ALL TIME · WORLDWIDE',
     explainLine: 'GIVE sends light to a stranger. RECEIVE brings one to you.',
     rotatePrompt: 'The Heal In Tree is made for portrait. Turn your phone upright to continue.',
     aboutTitle: 'The Heal-In Tree',
@@ -43,7 +43,7 @@ const STRINGS = {
         'Our digital forest is a living symbol of collective kindness. Every golden light sent adds to its meaning, representing the kindness that is always present in our world.',
       ] },
       { t: 'The Global Counter', p: [
-        'The number above the globe counts the golden lights sent across the world in the last 24 hours. Everyone sees the same number, a shared reflection of kindness in motion.',
+        'The number above the globe counts every golden light ever sent, all around the world, since the very first one. Everyone sees the same number, a shared reflection of kindness in motion.',
       ] },
       { t: 'Nothing Is Personal', p: [
         'No accounts, no conversations, no identities and no personal profiles. Every interaction is anonymous. No personal connection is required, and no message is attached.',
@@ -67,7 +67,7 @@ const STRINGS = {
   },
   es: {
     actButton: 'DAR', receiveButton: 'RECIBIR',
-    actsOfKindness: 'ACTOS DE BONDAD', global24h: 'EN LAS ÚLTIMAS 24 HORAS · TODO EL MUNDO',
+    actsOfKindness: 'ACTOS DE BONDAD', global24h: 'DE TODOS LOS TIEMPOS · TODO EL MUNDO',
     explainLine: 'DAR envía luz a un desconocido. RECIBIR te trae una a ti.',
     rotatePrompt: 'The Heal In Tree está hecha para vertical. Gira tu teléfono para continuar.',
     aboutTitle: 'The Heal-In Tree',
@@ -89,7 +89,7 @@ const STRINGS = {
         'Nuestro bosque digital es un símbolo vivo de la bondad colectiva. Cada luz dorada enviada añade significado, representando la bondad que siempre está presente en nuestro mundo.',
       ] },
       { t: 'El Contador Global', p: [
-        'El número sobre el planeta cuenta las luces doradas enviadas en todo el mundo en las últimas 24 horas. Todos ven el mismo número, un reflejo compartido de la bondad en movimiento.',
+        'El número sobre el planeta cuenta cada luz dorada enviada desde la primera, en todo el mundo. Todos ven el mismo número, un reflejo compartido de la bondad en movimiento.',
       ] },
       { t: 'Nada Es Personal', p: [
         'Sin cuentas, sin conversaciones, sin identidades y sin perfiles personales. Cada interacción es anónima. No se requiere ninguna conexión personal y no va ningún mensaje adjunto.',
