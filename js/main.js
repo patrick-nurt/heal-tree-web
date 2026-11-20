@@ -24,7 +24,7 @@ const STRINGS = {
     actsOfKindness: 'ACTS OF KINDNESS', global24h: 'IN THE LAST 24 HOURS · WORLDWIDE',
     explainLine: 'GIVE sends light to a stranger. RECEIVE brings one to you.',
     rotatePrompt: 'The Heal In Tree is made for portrait. Turn your phone upright to continue.',
-    aboutTitle: 'The Heal In Tree',
+    aboutTitle: 'The Heal-In Tree',
     aboutLead: [
       'We are all connected by an invisible golden thread.',
       'Heal In Tree is a place to engage anonymously with kindness, offering a feel-good experience on both sides. A simple way to give kindness and receive it, without conversation, without forms and without revealing who you are.',
@@ -70,7 +70,7 @@ const STRINGS = {
     actsOfKindness: 'ACTOS DE BONDAD', global24h: 'EN LAS ÚLTIMAS 24 HORAS · TODO EL MUNDO',
     explainLine: 'DAR envía luz a un desconocido. RECIBIR te trae una a ti.',
     rotatePrompt: 'The Heal In Tree está hecha para vertical. Gira tu teléfono para continuar.',
-    aboutTitle: 'The Heal In Tree',
+    aboutTitle: 'The Heal-In Tree',
     aboutLead: [
       'Todos estamos conectados por un hilo dorado invisible.',
       'Heal In Tree es un lugar para relacionarte anónimamente con la bondad, ofreciendo una experiencia de bienestar en ambos lados. Una forma sencilla de dar bondad y recibirla, sin conversación, sin formularios y sin revelar quién eres.',
